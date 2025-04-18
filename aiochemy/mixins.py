@@ -19,11 +19,13 @@ class PKMixin(MappedAsDataclass, ActiveRecord):
 
     @declared_attr
     def id(cls) -> Mapped[uuid.UUID]:
-        return mapped_column(primary_key=True,
-                             default_factory=uuid.uuid4,
-                             server_default=func.gen_random_uuid(),
-                             kw_only=True,
-                             init=False)
+        return mapped_column(
+            primary_key=True,
+            default_factory=uuid.uuid4,
+            server_default=func.gen_random_uuid(),
+            kw_only=True,
+            init=False,
+        )
 
     @classmethod
     async def find(cls, pk_uuid: uuid.UUID, session: AsyncSession | None = None) -> Self | None:
@@ -34,15 +36,14 @@ class PKMixin(MappedAsDataclass, ActiveRecord):
 
 class UpdateMixin(MappedAsDataclass, ActiveRecord):
     """Update/create timestamp tracking mixin combined with ActiveRecord functionality."""
+
     @declared_attr
     def created_at(cls) -> Mapped[datetime]:
         return mapped_column(server_default=func.now(), init=False)
 
     @declared_attr
     def updated_at(cls) -> Mapped[datetime]:
-        return mapped_column(default=func.now(),
-                             onupdate=func.now(),
-                             init=False)
+        return mapped_column(default=func.now(), onupdate=func.now(), init=False)
 
     @classmethod
     async def last_modified(cls, session: AsyncSession | None = None) -> Self | None:

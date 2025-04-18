@@ -45,6 +45,11 @@ jobs:
       with:
         python-version: '3.12'
 
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: 'stable' # Use the latest stable Go version
+
     - name: Install Poetry
       run: |
         pipx install poetry
@@ -59,7 +64,13 @@ jobs:
       run: |
         make check
 
-    - name: Apply database migrations
+    - name: Install Goose migration tool
+      run: |
+        go install github.com/pressly/goose/v3/cmd/goose@latest
+        # Add GOPATH/bin to the PATH for subsequent steps
+        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+    - name: Apply database migrations with Goose
       # Use the same environment variables as the test step for DB connection
       env:
         TEST_DB_USER: activealchemy
@@ -68,8 +79,10 @@ jobs:
         TEST_DB_HOST: localhost # Service is accessible via localhost
         TEST_DB_PORT: 5434 # Use the mapped host port
       run: |
-        # Ensure alembic runs within the poetry environment
-        poetry run alembic upgrade head
+        # Construct the DSN for goose, matching Makefile format
+        DB_DSN="postgres://${TEST_DB_USER}:${TEST_DB_PASSWORD}@${TEST_DB_HOST}:${TEST_DB_PORT}/${TEST_DB}?sslmode=disable"
+        # Run goose migrations
+        goose -dir migrations postgres "${DB_DSN}" up
 
     - name: Run tests
       # Provide environment variables for the tests to connect to the service DB

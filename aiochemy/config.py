@@ -8,7 +8,7 @@ logger: logging.Logger = logging.getLogger("aiochemy")
 
 
 class BaseConfig(BaseModel):
-    model_config = ConfigDict(extra="allow", validate_assignment=True)
+    model_config = ConfigDict(extra="allow", validate_assignment=False)
 
 
 class PostgreSQLConfigSchema(BaseConfig):
@@ -36,7 +36,7 @@ class PostgreSQLConfigSchema(BaseConfig):
     port: int = Field(default=5432)
     password: str = Field(default="aiochemy")
     host: str = Field(default="localhost")
-    params: dict[str, str] = Field(default={"sslmode": "disable"})
+    params: dict[str, str | int] = Field(default={"sslmode": "disable"})
     driver: str = Field(default="asyncpg", validation_alias=aliases.AliasChoices("async_driver", "driver"))
     connect_timeout: int = Field(default=10)
     create_engine_kwargs: dict[str, Any] = Field(default_factory=dict)
