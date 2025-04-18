@@ -8,7 +8,7 @@ logger: logging.Logger = logging.getLogger("aiochemy")
 
 
 class BaseConfig(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", validate_assignment=True)
 
 
 class PostgreSQLConfigSchema(BaseConfig):
@@ -43,11 +43,15 @@ class PostgreSQLConfigSchema(BaseConfig):
     debug: bool = Field(default=False)
     default_schema: str = Field(default="public")
     kwargs: dict[str, Any] = Field(default_factory=dict)
+    dsn: str | None = Field(default=None)
 
     def uri(self) -> str:
         return self.build_dsn()
 
     def build_dsn(self) -> str:
+        if self.dsn:
+            logger.debug("Using provided DSN: %s", self.dsn)
+            return self.dsn
         params = self.params.copy()
         if "sslmode" in params and self.driver == "asyncpg":
             logger.debug("Adjusting 'sslmode' to 'ssl' in config params for asyncpg.")

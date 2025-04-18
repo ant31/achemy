@@ -6,7 +6,7 @@ from typing import Self
 
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
+from sqlalchemy.orm import Mapped, MappedAsDataclass, declared_attr, mapped_column
 
 from .activerecord import ActiveRecord
 from .select import Select
@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 class PKMixin(MappedAsDataclass, ActiveRecord):
     """Primary key mixin combined with ActiveRecord functionality."""
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        primary_key=True,
-        server_default=func.gen_random_uuid(),
-        default_factory=uuid.uuid4,
-        kw_only=True,
-        init=True,  # Ensure it's part of __init__ for MappedAsDataclass
-    )
+    @declared_attr
+    def id(cls) -> Mapped[uuid.UUID]:
+        return mapped_column(primary_key=True,
+                             default_factory=uuid.uuid4,
+                             server_default=func.gen_random_uuid(),
+                             kw_only=True,
+                             init=False)
 
     @classmethod
     async def find(cls, pk_uuid: uuid.UUID, session: AsyncSession | None = None) -> Self | None:
@@ -34,16 +34,15 @@ class PKMixin(MappedAsDataclass, ActiveRecord):
 
 class UpdateMixin(MappedAsDataclass, ActiveRecord):
     """Update/create timestamp tracking mixin combined with ActiveRecord functionality."""
+    @declared_attr
+    def created_at(cls) -> Mapped[datetime]:
+        return mapped_column(server_default=func.now(), init=False)
 
-    updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(),
-        onupdate=func.now(),
-        init=False,  # Should not be set on init
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(),
-        init=False,  # Should not be set on init
-    )
+    @declared_attr
+    def updated_at(cls) -> Mapped[datetime]:
+        return mapped_column(default=func.now(),
+                             onupdate=func.now(),
+                             init=False)
 
     @classmethod
     async def last_modified(cls, session: AsyncSession | None = None) -> Self | None:
