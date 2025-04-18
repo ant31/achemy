@@ -1,0 +1,91 @@
+Version 2.5~TaxiDriver release on 2014/08/14
+
+	* Change database on the fly, with reconfigure options
+
+Version 2.4~Jeweler release on 2014/04/15
+
+	* template: fixed table_name in ruby template
+	* bootstrap: project can now correctly have their models overriden by users
+	* pep8: cleaned up code a bit
+
+Version 2.3~Corsair release on 2014/04/08
+
+	* bin/aiochemy: no longer installed with the python library
+	* bin/aiochemy: don't require to have aiochemy installed
+	* bin/aiochemy: fixed auto-completion
+
+Version 2.2~Elf release on 2014/04/04
+
+	* q(): fixed a bug when retrying session method (e.g. add)
+	* Q: can be used to wraps sequence of queries using the 'with' statement
+	* q(): now a default instance of Q
+	* README.md: Written a basic getting started documentation
+
+Version 2.1~Robot release on 2014/03/31
+
+	* bin/aiochemy: added Ruby on rails support
+	* bin/aiochemy: added bash completion
+
+Version 2.0~Alchemist release on 2014/03/25
+
+	* bin/aiochemy: can bootstrap new empty aiochemy project
+	* bin/aiochemy: can generate models from hibernate (xml) files
+	* bin/hibernate_to_sqlalchemy.py: moved to aiochemy/hbm.py
+	* aiochemy/hbm.py: rewritten with jinja2
+	* added templates: jinja2 files in tpl/
+
+Version 1.16~Pirate release on 2014/03/14
+
+	* Remove kombu
+
+Version 1.15 release on 2014/01/29
+
+	* Add q() to all activerecords methods
+	* Fix sleep
+
+Version 1.14 release on 2014/01/16
+
+	* Introduce version codenames (see list in version.py)
+	* Modify Queue class to NullClass if queue are handle by external
+	  pool (i.e pgbouncer)
+	* Add option: external_pool=Boolean
+
+Version 1.13.58 release on 2014/01/15
+
+	* Fix retry_over_time to take interval_start
+	* Renew query session when engine dispose.
+	  old closed session was still bound to the query_function causing errors.
+
+Version 1.13.57 release on 2013/13/01
+
+	* Dispose engine asap on error instead of issue a rollback
+
+Version 1.13.56 release on 2013/12/30
+
+	* Remove useless close on session
+
+Version 1.13.55
+
+	* Fix 'q' rollback position
+	* Add autocommit to q
+
+Version 1.13.52
+
+	* add columns to DeliveryTransfer: isMotherbrain
+	* add columns to Nano OldNano: isMotherbrain, creationDate
+	* retry 'q' args changed: use schema instead of session to rollback
+
+Version 1.13.48
+
+	* Engine are created after process fork
+	* Lazy engine connection
+	* New dispose_engines function to close connections
+	* Retry 'q' automatically dispose_engines if rollback fail
+
+Version 1.13.42
+
+	* Setup version
+
+Version 1.13.40
+
+	* initial : first release

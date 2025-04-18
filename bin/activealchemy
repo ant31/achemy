@@ -1,0 +1,445 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from __future__ import print_function
+
+from argparse import ArgumentParser
+from glob import glob
+import json
+from os import chdir, getcwd, listdir, makedirs
+from os.path import basename, dirname
+from sys import stderr
+from time import strftime
+import xml.etree.ElementTree as ET
+
+from jinja2 import Environment, FileSystemLoader
+
+
+TypeMapping = {"string": "String",
+               "long": "BigInteger",
+               "integer": "Integer",
+               "timestamp": "DateTime",
+               "boolean": "Boolean",
+               "double": "Float"}
+
+env = Environment(loader=FileSystemLoader('/usr/share/aiochemy/'),
+                  trim_blocks=True)
+tpl = env.get_template
+
+def camelToSnake(s):
+    """Convert camelCase identifier to snake_case.
+
+    Is it ironic that this function converts to snake_case and yet it is in
+    camelCase? hmm..
+    """
+    return ''.join(['_' + c.lower() if c.isupper() else c for c in s]).lstrip('_')
+
+env.filters['camelToSnake'] = camelToSnake
+
+
+class Alchemist(object):
+    """Bootstrap script for custom aiochemy models."""
+
+    # Tree of an aiochemy project
+    basetree = {
+        '%(package)s': {
+            'models': {
+                'base': {
+                    '__init__.py': '',
+                },
+                '__init__.py': tpl('models__init__.py.j2'),
+            },
+            '__init__.py': tpl('__init__.py.j2'),
+            'version.py': tpl('version.py.j2'),
+        },
+        'Changelog': tpl('Changelog.j2'),
+        'README.md': tpl('README.md.j2'),
+        'setup.py': tpl('setup.py.j2'),
+        '.aiochemy': '',
+    }
+
+    # Additional tree for a debian package
+    debiantree = {
+        'debian': {
+            'source': {
+                'format': '3.0 (quilt)\n',
+            },
+            'changelog': tpl('changelog.j2'),
+            'compat': '8\n',
+            'control': tpl('control.j2'),
+            'copyright': tpl('copyright.j2'),
+            'docs': 'README.md\n',
+            'rules': tpl('rules.j2'),
+        }
+    }
+
+    def __init__(self):
+        """Parse command line arguments."""
+        self.parser = ArgumentParser(
+                usage='%(prog)s command [PATH]',
+                version='%(prog)s 1.0',
+                description='Bootsrap a new aiochemy project.')
+        self.parser.add_argument(
+                'command',
+                metavar='command',
+                type=str,
+                help='Either `bootstrap` to start a new project or `generate` '
+                     'to create new models in the current project',
+                choices=('bootstrap', 'generate'))
+        self.parser.add_argument(
+                'path',
+                metavar='PATH',
+                nargs='?',
+                default='.',
+                type=str,
+                help='Meaning depends of action invoked. For `bootstrap` it is '
+                     'the directory to the new project and for `generate` it '
+                     'is the path to the hibernate model files. Default is '
+                     'current dir.')
+        self.args = self.parser.parse_args()
+        self.cwd = './'
+        self.ctx = {}
+
+    def transmute(self):
+        """Execute the action given as first argument"""
+        getattr(self, self.args.command)()
+
+    def bootstrap(self):
+        """Bootstrap a new aiochemy project."""
+        if self.goto_root():
+            self.parser.error('Already in an aiochemy project.')
+
+        try:
+            makedirs(self.args.path)
+        except OSError:
+            pass
+        try:
+            chdir(self.args.path)
+        except OSError:
+            print('Could not find or create directory "%s"' % self.args.path, file=stderr)
+
+        self.ctx_in('package', 'Module name', 'test')
+        self.ctx_in('version', 'Starting version', '1.0')
+        self.ctx_in('codename', 'Version codename', 'egg')
+        self.ctx_in('author', 'Author', 'John Doe')
+        self.ctx_in('author_mail', 'Email', 'john.doe@host.tld')
+
+        self.ctx['year'] = strftime('%Y')
+        self.ctx['date'] = strftime('%Y/%m/%d')
+        self.ctx['datetime'] = strftime('%a, %d %b %Y %H:%M:%S %z')
+        self.ctx['modules'] = [
+            '%s' % self.ctx['package'],
+            '%s.models' % self.ctx['package'],
+            '%s.models.base' % self.ctx['package'],
+        ]
+
+        self.make_tree(self.basetree)
+
+        self.ctx_in('.deb', 'Create a debian package', 'Y', '%s ? [%s/n] ')
+        if self.ctx['.deb'].lower().startswith('y'):
+            self.make_tree(self.debiantree)
+
+        # Save context for future use of generate
+        with open('.aiochemy', 'w') as f:
+            f.write(json.dumps(self.ctx))
+
+    def goto_root(self):
+        """Go to the current project's root."""
+        path = getcwd()
+        self.cwd = path
+        try:
+            while '.aiochemy' not in listdir(path):
+                if path == '/':
+                    return False
+                path = dirname(path)
+            chdir(path)
+            return True
+        except OSError:
+            pass
+        return False
+
+    def make_tree(self, tree, path='.'):
+        """recursively build a tree represented by a dict."""
+        for file_, content in tree.iteritems():
+            fpath = ('%s/%s' % (path, file_)) % self.ctx
+            if isinstance(content, dict):
+                try:
+                    makedirs(fpath)
+                except OSError:
+                    pass
+                self.make_tree(content, path=fpath)
+            else:
+                with open(fpath, 'w') as f:
+                    try:
+                        f.write(content.render(self.ctx))
+                    except AttributeError:
+                        f.write(content)
+
+    def ctx_in(self, var, mess, default, format_=None):
+        """Get context input from user."""
+        f = format_ or '%s [%s]: '
+        self.ctx[var] = raw_input(f % (mess, default)) or default
+
+    def generate(self):
+        """Generate models in the current aiochemy tree."""
+        if not self.goto_root():
+            self.parser.error('Not in an aiochemy project.')
+
+        self.ctx_in('list_sch', 'List of schemas to generate', '*')
+        self.ctx_in('dot', 'Generate dot files', 'Y', '%s ? [%s/n] ')
+
+        with open('.aiochemy') as f:
+            self.ctx.update(json.load(f))
+
+        entities = []
+        for file_ in glob('%s/%s/*.xml' % (self.cwd, self.args.path)):
+            try:
+                entities.append(EntityModel(file_, self.ctx['package']))
+            except EntityError as ex:
+                print('Skipping: %s' % ex.message, file=stderr)
+        if not entities:
+            self.parser.error('No hibernate models found.')
+
+        graph = GraphModel(entities)
+        if self.ctx['list_sch'] == '*':
+            graph.generate_python(self.ctx)
+            graph.generate_ruby(self.ctx, 'rails')
+        else:
+            graph.generate_python(self.ctx,
+                                  schemas=self.ctx['list_sch'].split())
+            graph.generate_ruby(self.ctx,
+                                'rails',
+                                schemas=self.ctx['list_sch'].split())
+        if self.ctx['dot'].lower().startswith('y'):
+            graph.generate_dot()
+
+
+class GraphModel(object):
+    """This object represent a graph of entities linked by their relations.
+
+    This object is able to generate the following format:
+        - dot: graphviz representation of the entities relationship with one
+          another
+        - python: aiochemy models
+    """
+
+    def __init__(self, entities=[]):
+        """Bootstrap the graph from the given list of entities."""
+        self.entities = dict((e.name, e) for e in entities)
+        self.graph = {}
+        self._compute_relations()
+
+    def _perror(self, mess):
+        """Print an error message to stderr."""
+        print(mess, file=stderr)
+
+    def _compute_relations(self):
+        """Compute the relations between all the entities."""
+        for e in self.entities.itervalues():
+            for _, r in e.relations.items():
+                if r['backref'] is not None:
+                    continue
+                try:
+                    backe = self.entities[r['entity']]
+                except KeyError:
+                    self._perror('Relation to unknown entity "%s"' % r['entity'])
+                else:
+                    r['eschema'] = backe.schema
+                    if r['type'] == 'many-to-many':
+                        r['eschema'] = backe.schema
+                    else:
+                        for _, v in backe.relations.items():
+                            if v['foreign_key_col'] == r['foreign_key_col'] and v['entity'] == e.name:
+                                if v['foreign_key'] is None:
+                                    v['foreign_key'] = r['foreign_key']
+                                elif r['foreign_key'] is None:
+                                    r['foreign_key'] = v['foreign_key']
+                                if v['backref'] is None:
+                                    v['backref'] = r['name']
+                                if v['selfschema'] is not None:
+                                    r['eschema'] = v['selfschema']
+                                r['backref'] = v['name']
+                                if r['type'] == 'one-to-many' and r['selfschema'] is not None:
+                                    v['eschema'] = r['selfschema']
+
+    def generate_ruby(self, ctx, path, schemas=None):
+        """Generate the ruby files for all entities in the given schemas."""
+        try:
+            makedirs(path)
+        except OSError:
+            pass
+        for e in self.entities.itervalues():
+            if schemas is None or e.schema in schemas:
+                with open('%s/%s.rb' % (path, camelToSnake(e.name)), 'w') as f:
+                    f.write(tpl('model.rb.j2').render(e=e))
+
+    def generate_python(self, ctx, schemas=None):
+        """Generate the python files for all entities in the given schemas."""
+        ctx['entities'] = self.entities.values()
+        ctx['entities'].sort(key= lambda e: e.name)
+        for e in self.entities.itervalues():
+            if schemas is None or e.schema in schemas:
+                self._gpf(e, ctx['package'] + '/models/base/' + e.schema, 'base')
+                self._gpf(e, ctx['package'] + '/models/' + e.schema, '')
+                ctx['modules'] = set(ctx['modules'])
+                ctx['modules'].update([
+                    '%s.models.base.%s' % (ctx['package'], e.schema),
+                    '%s.models.%s' % (ctx['package'], e.schema),
+                ])
+        with open(ctx['package'] + '/__init__.py', 'w') as f:
+            f.write(tpl('__init__.py.j2').render(ctx))
+        with open('README.md', 'w') as f:
+            f.write(tpl('README.md.j2').render(ctx))
+        with open('setup.py', 'w') as f:
+            f.write(tpl('setup.py.j2').render(ctx))
+
+    def _gpf(self, entity, path, type_=''):
+        try:
+            makedirs(path)
+        except OSError:
+            pass
+        else:
+            # touch __init_.py
+            with open(path + '/__init__.py', 'w'):
+                pass
+        with open('%s/%s.py' % (path, entity.name.lower()), 'w') as f:
+            f.write(tpl('model%s.py.j2' % type_).render(e=entity, TypeMapping=TypeMapping))
+
+    def generate_dot(self):
+        """Generate the dot file for all entities."""
+        try:
+            makedirs("./dots")
+        except OSError:
+            pass
+        for e in self.entities.itervalues():
+            with open('dots/%s.dot' % e.name, 'w') as f:
+                f.write(tpl('model.dot.j2').render(e=e))
+
+
+class EntityError(Exception):
+    """Base Exception used for EntityModel parsing errors"""
+    pass
+
+
+class EntityModel(object):
+    """Entity Model.
+
+    This class is a runtime representation of a model object.
+    """
+
+    def __init__(self, filename, package):
+        """Create entity from a given hbm file."""
+        tree = ET.parse(filename)
+        self.root = tree.getroot()
+        self.filename = basename(filename)
+        self.columns = []
+        self.col_to_property = {}
+        self.property_to_col = {}
+        self.col_to_relation = {}
+        self.relations = {}
+        self.package = package
+        self.parse_root(self.root)
+        self.parse_properties(self.root)
+        self.parse_many_to_one(self.root)
+        self.parse_x_to_many(self.root)
+
+    def _perror(self, mess):
+        """Print an error message prefixed by the filename to stderr."""
+        print(self.filename + ':', mess, file=stderr)
+
+    def parse_properties(self, root):
+        """Parse properties from the root tag."""
+        for property_ in root.iter("property"):
+            col_def = property_.attrib
+            try:
+                if 'column' not in col_def:
+                    col_def['column'] = property_.find('column[@name]').attrib['name']
+                self.property_to_col[col_def['name']] = col_def['column']
+                self.col_to_property[col_def['column']] = col_def['name']
+                self.columns.append(col_def)
+            except (AttributeError, KeyError):
+                self._perror('Ignoring malformed property.')
+        return self.columns
+
+    def parse_many_to_one(self, root):
+        """Parse many to one relations."""
+        for mtone in root.iter("many-to-one"):
+            r = {
+                "backref": None,
+                "type": "many-to-one",
+                "selfschema": self.schema,
+                "eschema": None,
+            }
+            try:
+                r["name"] = mtone.attrib['name']
+            except KeyError:
+                self._perror('Skipping unnamed relation.')
+                continue
+            try:
+                r["entity"] = mtone.attrib['entity-name']
+                r["foreign_key_col"] = mtone.attrib['column']
+            except KeyError as ex:
+                self._perror('Missing attribute %s for relation %s.' %
+                            (ex.args[0], r['name']))
+                continue
+            try:
+                r["foreign_key"] = self.col_to_property[mtone.attrib['column']]
+            except KeyError:
+                self._perror('Relation %s references unknown column %s.' %
+                            (r['name'], r['foreign_key_col']))
+                continue
+            self.relations[mtone.attrib['name']] = r
+            self.col_to_relation[mtone.attrib['column']] = mtone.attrib['name']
+
+    def parse_x_to_many(self, root):
+        """Parse one to many and many to many relations."""
+        for iset in root.iter("set"):
+            rel = iset.find("*[@entity-name]")
+            if rel is None:
+                continue
+            r = {
+                "type": rel.tag,
+                "foreign_key": None,
+                "backref": None,
+                "selfschema": self.schema,
+                "eschema": None
+            }
+            try:
+                r["entity"] = rel.attrib['entity-name']
+                r["name"] = iset.attrib['name']
+            except KeyError as ex:
+                self._perror('Missing attribute %s.' % ex.args[0])
+                continue
+            try:
+                r["foreign_key_col"] =  iset.find("key").attrib['column']
+            except AttributeError:
+                self._perror('Missing key tag for relation %s.' % r['name'])
+            except KeyError:
+                self._perror('Missing column attribute for relation %s.' % r['name'])
+            else:
+                self.relations[iset.attrib['name']] = r
+
+    def parse_root(self, root):
+        """Parse the root tag for class information."""
+        classa = root.find("class")
+        if classa is None:
+            raise EntityError('No class found in %s.' % self.filename)
+        try:
+            self.table = classa.attrib['table']
+            self.schema = classa.attrib['schema']
+            self.name = classa.attrib['entity-name']
+        except KeyError as ex:
+            raise EntityError('Missing atrribute "%s"' % ex.args[0])
+        try:
+            self.primarykey = root.find("class/id").attrib
+            if "column" not in self.primarykey:
+                self.primarykey["column"] = root.find("class/id/column").attrib["name"]
+        except (AttributeError, KeyError):
+            raise EntityError('Could not find primary key in %s.' % self.filename)
+        self.col_to_property[self.primarykey['column']] = 'id'
+        self.property_to_col[ self.primarykey['name']] = self.primarykey['column']
+
+
+if __name__ == '__main__':
+    alchemist = Alchemist()
+    alchemist.transmute()
