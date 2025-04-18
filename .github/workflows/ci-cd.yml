@@ -19,6 +19,23 @@ jobs:
       name: pypi # Optional: Define environment for PyPI publishing secrets/protection rules
       url: https://pypi.org/p/aiochemy # Optional: Link to PyPI project
 
+    # Add PostgreSQL service container
+    services:
+      postgres:
+        image: postgres:latest # Use the latest official PostgreSQL image
+        env:
+          POSTGRES_USER: activealchemy # Match default test user
+          POSTGRES_PASSWORD: activealchemy # Match default test password
+          POSTGRES_DB: pythonapp-test # Match default test database
+        ports:
+          - 5434:5432 # Map container port 5432 to host port 5434 (matching test default)
+        # Add a health check to wait for the database to be ready
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -43,6 +60,13 @@ jobs:
         make check
 
     - name: Run tests
+      # Provide environment variables for the tests to connect to the service DB
+      env:
+        TEST_DB_USER: activealchemy
+        TEST_DB_PASSWORD: activealchemy
+        TEST_DB: pythonapp-test
+        TEST_DB_HOST: localhost # Service is accessible via localhost
+        TEST_DB_PORT: 5434 # Use the mapped host port
       run: |
         make test
 
