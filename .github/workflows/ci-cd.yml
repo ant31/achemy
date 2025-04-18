@@ -59,6 +59,18 @@ jobs:
       run: |
         make check
 
+    - name: Apply database migrations
+      # Use the same environment variables as the test step for DB connection
+      env:
+        TEST_DB_USER: activealchemy
+        TEST_DB_PASSWORD: activealchemy
+        TEST_DB: pythonapp-test
+        TEST_DB_HOST: localhost # Service is accessible via localhost
+        TEST_DB_PORT: 5434 # Use the mapped host port
+      run: |
+        # Ensure alembic runs within the poetry environment
+        poetry run alembic upgrade head
+
     - name: Run tests
       # Provide environment variables for the tests to connect to the service DB
       env:
