@@ -36,7 +36,7 @@ jobs:
       run: |
         # Install project dependencies, but not the project itself as editable
         # This is often better for CI environments
-        poetry install --no-interaction --no-root
+        poetry install --no-interaction
 
     - name: Run checks (linting, formatting, etc.)
       run: |
