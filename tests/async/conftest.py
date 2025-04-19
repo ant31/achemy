@@ -56,31 +56,20 @@ def test_model():
 
 @pytest_asyncio.fixture
 async def setup_select(async_engine, test_model): # Removed aclean_tables
-    """Set up select tests"""
-    print("setup_select")
+    """Set up select tests by ensuring the engine is set."""
+    print("setup_select: Setting engine for TestModel")
     TestModel.set_engine(async_engine)
-
-    # Clean up
-    async with async_engine.engine().begin() as conn:
-        # Pass the specific model's metadata
-        # Ensure table exists (create_all is idempotent)
-        await conn.run_sync(test_model.metadata.create_all)
-
-    # Data creation moved to individual tests
-    print("setup_select: Table ensured.")
+    # Table creation is now handled by the acreate_tables fixture (assumed)
+    print("setup_select: Engine set.")
 
 @pytest_asyncio.fixture
 async def setup_mixin_tests(async_engine, # Removed aclean_tables
                             mock_pk_model_class, mock_update_model_class, mock_combined_model_class):
-    """Set up engine and tables for mixin tests."""
-    models = [mock_pk_model_class, mock_update_model_class, mock_combined_model_class]
-    # Create tables
-    print("setup_mixin_tests")
-    async with async_engine.engine().begin() as conn:
-        print("Creating tables...")
-        for model in models:
-            print(f"Creating table: {model.__tablename__}")
-            await conn.run_sync(model.metadata.create_all)
+    """Set up engine for mixin tests (tables created globally)."""
+    # Engine is set globally via async_engine fixture on Base
+    # Tables are created globally via acreate_tables fixture (assumed)
+    print("setup_mixin_tests: Mixin models ready (engine/tables handled globally).")
+    # No specific setup needed here anymore unless it's non-DB related
 
 
 @pytest_asyncio.fixture(scope="session",autouse=True)
