@@ -1,5 +1,5 @@
 [project]
-name = "aiochemy"
+name = "achemy"
 version = "0.2.0"
 description = ""
 authors = [{email="2t.antoine@gmail.com", name="ant31"}]

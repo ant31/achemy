@@ -2,8 +2,8 @@
 
 APP_ENV ?= dev
 VERSION := `cat VERSION`
-package := aiochemy
-NAMESPACE := aiochemy
+package := achemy
+NAMESPACE := achemy
 MIGRATE_BINARY = goose
 GOTOOLS =
 GOTOOLS += $(MIGRATE_BINARY)
@@ -176,6 +176,6 @@ ipython:
 	poetry run ipython
 
 rename:
-	ack aiochemy -l | xargs -i{} sed -r -i "s/aiochemy/aiochemy/g" {}
-	ack Aiochemy -i -l | xargs -i{} sed -r -i "s/Aiochemy/Aiochemy/g" {}
-	ack AIOCHEMY -i -l | xargs -i{} sed -r -i "s/AIOCHEMY/AIOCHEMY/g" {}
+	ack achemy -l | xargs -i{} sed -r -i "s/achemy/achemy/g" {}
+	ack Achemy -i -l | xargs -i{} sed -r -i "s/Achemy/Achemy/g" {}
+	ack ACHEMY -i -l | xargs -i{} sed -r -i "s/ACHEMY/ACHEMY/g" {}

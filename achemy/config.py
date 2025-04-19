@@ -4,11 +4,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, aliases
 
-logger: logging.Logger = logging.getLogger("aiochemy")
+logger: logging.Logger = logging.getLogger("achemy")
 
 
 class BaseConfig(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", validate_assignment=False)
 
 
 class PostgreSQLConfigSchema(BaseConfig):
@@ -31,23 +31,27 @@ class PostgreSQLConfigSchema(BaseConfig):
         async_uri() -> str: Returns the asynchronous DSN.
     """
 
-    db: str = Field(default="aiochemy-dev")
-    user: str = Field(default="aiochemy")
+    db: str = Field(default="achemy-dev")
+    user: str = Field(default="achemy")
     port: int = Field(default=5432)
-    password: str = Field(default="aiochemy")
+    password: str = Field(default="achemy")
     host: str = Field(default="localhost")
-    params: dict[str, str] = Field(default={"sslmode": "disable"})
+    params: dict[str, str | int] = Field(default={"sslmode": "disable"})
     driver: str = Field(default="asyncpg", validation_alias=aliases.AliasChoices("async_driver", "driver"))
     connect_timeout: int = Field(default=10)
     create_engine_kwargs: dict[str, Any] = Field(default_factory=dict)
     debug: bool = Field(default=False)
     default_schema: str = Field(default="public")
     kwargs: dict[str, Any] = Field(default_factory=dict)
+    dsn: str | None = Field(default=None)
 
     def uri(self) -> str:
         return self.build_dsn()
 
     def build_dsn(self) -> str:
+        if self.dsn:
+            logger.debug("Using provided DSN: %s", self.dsn)
+            return self.dsn
         params = self.params.copy()
         if "sslmode" in params and self.driver == "asyncpg":
             logger.debug("Adjusting 'sslmode' to 'ssl' in config params for asyncpg.")

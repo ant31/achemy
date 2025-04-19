@@ -19,9 +19,9 @@ from sqlalchemy.orm import (
 from typing_extensions import deprecated
 
 # Assuming ActiveEngine is imported from the refactored engine file
-from aiochemy.engine import ActiveEngine
-from aiochemy.schema import Schema
-from aiochemy.select import Select
+from achemy.engine import ActiveEngine
+from achemy.schema import Schema
+from achemy.select import Select
 
 logger = logging.getLogger(__name__)
 

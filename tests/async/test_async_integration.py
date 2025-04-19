@@ -8,7 +8,7 @@ import uuid
 import pytest
 from sqlalchemy.exc import SQLAlchemyError  # Import necessary exceptions
 
-from aiochemy.demo.amodels import ACity, ACountry, AResident
+from achemy.demo.amodels import ACity, ACountry, AResident
 
 
 @pytest.mark.asyncio

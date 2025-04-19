@@ -1,5 +1,5 @@
 src = [
-    "aiochemy"
+    "achemy"
 
 ]
 
@@ -478,4 +478,4 @@ exclude = []
 [analyze]
 detect-string-imports = true
 [lint.isort]
-known-first-party = ["aiochemy"]
+known-first-party = ["achemy"]

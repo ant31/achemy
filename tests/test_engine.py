@@ -1,5 +1,5 @@
 """
-Tests for aiochemy/engine.py
+Tests for achemy/engine.py
 """
 from unittest.mock import AsyncMock, patch
 
@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlalchemy.pool import NullPool
 
-from aiochemy import ActiveEngine, PostgreSQLConfigSchema
+from achemy import ActiveEngine, PostgreSQLConfigSchema
 
 # --- Fixtures ---
 
@@ -145,7 +145,7 @@ def test_get_engine_creation_and_caching(engine_manager):
 def test_engine_creation_failure(engine_manager):
     """Test that engine creation errors are propagated."""
     with patch(
-        'aiochemy.engine.create_async_engine',
+        'achemy.engine.create_async_engine',
         side_effect=RuntimeError("DB connection failed")
     ) as mock_create:
         with pytest.raises(RuntimeError, match="DB connection failed"):
@@ -229,7 +229,7 @@ def test_session_creation_failure(engine_manager):
     engine_manager.engine()
 
     # Mock sessionmaker to raise an error
-    with patch('aiochemy.engine.async_sessionmaker', side_effect=TypeError("Invalid session args")) as mock_create:
+    with patch('achemy.engine.async_sessionmaker', side_effect=TypeError("Invalid session args")) as mock_create:
         with pytest.raises(TypeError, match="Invalid session args"):
             # Trigger sessionmaker creation with specific kwargs to ensure it's a new one
             engine_manager.session(session_kwargs={"autoflush": False})

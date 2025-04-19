@@ -1,19 +1,19 @@
-# Aiochemy Documentation
+# Achemy Documentation
 
-Aiochemy is a Python library that simplifies database interactions by providing an Active Record pattern and automatic session management. It supports both synchronous and asynchronous operations, making it flexible for various application needs. 
+Achemy is an asynchronous Python library that simplifies database interactions by providing an Active Record pattern implementation built on SQLAlchemy 2.0+. It focuses on async operations and automatic session management for ease of use.
 
 ## Installation
 
 ```bash
-pip install aiochemy
+pip install achemy
 ```
 
 ## Configuration
 
-Aiochemy uses a configuration schema to manage database connection details. Here's an example using the `PostgreSQLConfigSchema`:
+Achemy uses a configuration schema to manage database connection details. Here's an example using the `PostgreSQLConfigSchema`:
 
 ```python
-from aiochemy.config import PostgreSQLConfigSchema
+from achemy.config import PostgreSQLConfigSchema
 
 config = PostgreSQLConfigSchema(
     db="mydatabase",
@@ -21,37 +21,26 @@ config = PostgreSQLConfigSchema(
     password="mypassword",
     host="localhost",
     port=5432,
+    # driver="asyncpg" # Default is asyncpg
 )
 ```
-See `mise.local.toml` and other examples for different configuration options.
+See `achemy/config.py` and `tests/test_config.py` for more configuration options.
 
 ## Setting up the Engine
 
-The `ActiveEngine` class manages database connections.  You can set it up for synchronous or asynchronous operations:
-
-**Synchronous:**
+The `ActiveEngine` class manages asynchronous database connections. Initialize it with your configuration:
 
 ```python
-from aiochemy import ActiveEngine
+from achemy import ActiveEngine, ActiveRecord
+from achemy.demo.amodels import ACountry # Example model
 
+# Create the engine instance
 engine = ActiveEngine(config)
-```
 
-**Asynchronous:**
-
-```python
-from aiochemy.aio import ActiveEngine
-
-engine = ActiveEngine(config)
-```
-
-Set the engine for your models:
-
-```python
-from aiochemy import ActiveRecord
-from myapp.models import MyModel # Assuming 'MyModel' inherits from ActiveRecord
-
-MyModel.set_engine(engine)
+# Set the engine globally for all ActiveRecord models
+# or set it specifically for base classes or individual models
+ActiveRecord.set_engine(engine)
+# Alternatively: ACountry.set_engine(engine)
 ```
 
 ## Basic CRUD Operations
@@ -62,52 +51,79 @@ MyModel.set_engine(engine)
 from myapp.models import User
 
 # Method 1: Create and save.
+# 'commit=True' (default is False) will commit the session automatically.
+# If commit=False, the object is added to the session and flushed (to get ID),
+# but requires an explicit session.commit() later.
 user = User(name="Alice", email="alice@example.com")
-user.save()
+await user.save(commit=True) # Use await for async operations
 
-# Method 2: Using add.
-user = User(name="Bob")
-User.add(user, commit=True) # commit=True commits the change immediately.
+# Method 2: Using the class method 'add'.
+user_bob = User(name="Bob")
+await User.add(user_bob, commit=True) # commit=True commits the change immediately.
+
+# Add multiple records efficiently
+users_to_add = [
+    User(name="Charlie"),
+    User(name="Diana")
+]
+await User.add_all(users_to_add, commit=True)
 ```
 
 ### Querying
 
 ```python
-# Retrieve all users
-users = User.all()
+# Retrieve all users (potentially many, use with caution or filtering)
+all_users = await User.all()
 
-# Find a user by primary key.
+# Get a user by primary key (optimized)
 user_pk = uuid.UUID("some uuid here")
-user = User.find(user_pk) # using PKMixin which adds find().
+user_by_pk = await User.get(user_pk)
+
+# Find a user by primary key using the PKMixin helper 'find'
+# (This is equivalent to User.get(user_pk) if PKMixin is used)
+user_by_find = await User.find(user_pk)
+
+# Find the first user matching specific criteria
+user_by_email = await User.find_by(email="alice@example.com")
+
+# Find all users matching specific criteria
+users_named_alice = await User.all(query=User.where(User.name == "Alice"))
+# Or directly using where() which returns a Select object
+select_query = User.where(User.name == "Alice")
+# Execute the query using .all() or .first() etc.
+users_named_alice_alt = await User.all(query=select_query)
 
 
-# Find a user by email
-user = User.find_by(email="alice@example.com")
+# Find the first user overall (default order by primary key).
+first_user = await User.first()
 
-# Find users with a specific name
-users = User.where(User.name == "Alice").all()
+# Find the first user ordered by a specific column (e.g., name ascending)
+first_user_by_name = await User.first(order_by=User.name.asc())
 
+# Find the most recently created user (requires UpdateMixin)
+latest_user = await User.last_created()
 
-# Find the first user in the database.
-first_user = User.first() # Orders by the primary key.
+# Find the oldest user (requires UpdateMixin)
+oldest_user = await User.first_created()
 
+# Find the most recently updated user (requires UpdateMixin)
+last_updated_user = await User.last_modified()
 
-# Find the last user in the database, ordered by a column.
-last_user = User.last(User.name) # Orders by User.name DESC.
-
+# Get users modified since a specific datetime (requires UpdateMixin)
+from datetime import datetime, timedelta
+one_day_ago = datetime.utcnow() - timedelta(days=1)
+recent_users = await User.get_since(one_day_ago)
 
 # Use a custom query with advanced selects
-query = User.select().where(User.created_at < some_date)
-users = User.all(query=query) # Can combine custom queries with other operations
+# Note: .select() creates the query object, execution methods like .all() run it.
+query = User.select().where(User.created_at < some_date).order_by(User.name.desc())
+selected_users = await User.all(query=query)
 
-# Find the first created user
-first_created_user = User.first_created()
+# Count users matching criteria
+active_user_count = await User.count(query=User.where(User.is_active == True))
 
-# Find the last created user
-last_created_user = User.last_created()
-
-# Count users
-user_count = User.count()
+# Count all users
+total_user_count = await User.count()
 
 
 ```
@@ -115,118 +131,146 @@ user_count = User.count()
 ### Updating Records
 
 ```python
-user = User.find_by(name="Alice")
+user = await User.find_by(name="Alice")
 if user:
     user.name = "Alicia"
-    user.save()
+    await user.save(commit=True) # Remember await and commit=True
 ```
 
 ### Deleting Records
 ```python
-user = User.find_by(name="Bob")
+user = await User.find_by(name="Bob")
 if user:
-    User.delete(user)
+    await User.delete(user, commit=True) # Remember await and commit=True
 ```
 
+### Data Handling and Schemas
 
-### Asynchronous Operations
-
-Aiochemy supports asynchronous operations using `asyncio` and `async/await`. Use `aiochemy.aio.ActiveRecord`, `aiochemy.aio.ActiveEngine`, and `aiochemy.aio.Schema`:
+Achemy models provide methods for data conversion:
 
 ```python
-import asyncio
-from aiochemy.aio import ActiveRecord, Schema
+user = await User.find_by(name="Alicia")
 
-# ... (setup engine as described above, using the async ActiveEngine) ...
+# Convert model instance to a dictionary (mapped columns only)
+user_dict = user.to_dict()
+print(user_dict)
+# Output: {'id': UUID('...'), 'name': 'Alicia', 'email': '...', ...}
 
-async def create_user():
-    user = User(name="Dave")
-    await user.save()
-    print(f"Created user: {user}")
+# Convert to a JSON-serializable dictionary (handles UUID, datetime, etc.)
+user_json_serializable = user.dump_model()
+print(user_json_serializable)
+# Output: {'id': '...', 'name': 'Alicia', 'email': '...', ...}
 
-asyncio.run(create_user())
+# Load data from a dictionary into a new model instance
+# Note: Only sets attributes corresponding to mapped columns.
+new_user_data = {"name": "Eve", "email": "eve@example.com", "extra_field": "ignored"}
+new_user_instance = User.load(new_user_data)
+print(new_user_instance.name) # Output: Eve
+# print(new_user_instance.id) # Output: None (unless 'id' was in the dict)
 
-# Use async methods for querying and operations
-users = await User.all()
+# Using Pydantic Schemas (Optional)
+# Define a Pydantic schema for your model
+from achemy import Schema as BaseSchema
 
-# Convert model instances to dictionaries and vice-versa
-user_data = user.dump_model()
-restored_user = User.load(**user_data)
+class UserSchema(BaseSchema[User]): # Generic type hint to User model
+    name: str
+    email: str | None = None
+    # Add other fields as needed, matching model attributes
 
-schema = User.Schema() # Convert schemas to model instances and back
-user_instance = schema.to_model(User)
-user_schema = User.Schema.model_validate(user_instance)
+# Create schema from model instance
+user_schema_instance = UserSchema.model_validate(user)
+print(user_schema_instance.model_dump())
+
+# Create model instance from schema instance
+model_from_schema = user_schema_instance.to_model(User)
+print(model_from_schema.name)
 ```
-See `aiochemy/demo/amodels.py` for a detailed example.
+See `achemy/schema.py` and `tests/test_schema.py` for more details.
 
-### Explicit sessions
+### Explicit Session Management
+
+While Achemy methods often handle sessions internally (creating one if needed), you can manage sessions explicitly for more control, especially for transactions spanning multiple operations.
+
+Use `Model.get_session()` with an `async with` block:
 
 ```python
-session = User.new_session()
-try:
-    user = User(name='Bob')
-    session.add(user)
-    session.commit()
-finally:
-    session.close()
+async def complex_operation():
+    # get_session() provides a session managed by the context manager
+    async with await User.get_session() as session:
+        try:
+            user_frank = User(name='Frank')
+            # Pass the explicit session to ActiveRecord methods
+            await User.add(user_frank, commit=False, session=session) # commit=False within transaction
 
-# async
-async def async_example():
-    async_session = await User.new_session()
-    try:
-        user = User(name='Bob')
-        async_session.add(user)
-        await async_session.commit()
-    finally:
-        await async_session.close()
+            # Perform other operations with the same session
+            city = City(name="Frankfurt")
+            await city.save(commit=False, session=session)
 
-async def context_session():
-    async with User.new_session() as session:    
-        user = User(name='Bob')        
-        async_session.add(user)
-        await async_session.commit(session)
-        # or 
-        user2 = User(name='Alice')
-        user2 = await Use.add(user2, commit=True, session=session)
+            # Commit the transaction explicitly at the end
+            await session.commit()
+            print("Transaction committed successfully.")
+
+        except Exception as e:
+            print(f"An error occurred: {e}. Rolling back transaction.")
+            # Rollback happens automatically when exiting 'async with' on error
+            # await session.rollback() # Explicit rollback is usually not needed here
 ```
- 
-
 ### Transactions
 
-Transactions are automatically handled for `add()`, `delete()`, and `save()`.
+When using explicit session management with `async with await Model.get_session() as session:`, the session context manager automatically handles transactions:
+*   If the block completes successfully, the transaction is committed (if `session.commit()` was called).
+*   If an exception occurs within the block, the transaction is automatically rolled back.
 
-For fine-grained control use a context manager with `begin()` and `begin_nested()`:
+Example:
 ```python
+async def transaction_example():
+    async with await User.get_session() as session:
+        try:
+            user1 = User(name="TxUser1")
+            await session.add(user1) # Add to session, no commit yet
 
-with User.new_session() as session
-    try:
-        # Operations here
-        # Rollback will happen automatically
-        session.add(user1)
-        session.add(user2)
-        1 / 0 # Will rollback to here
-    except Exception as e:
-        print(f"Error: {e}") # Will rollback to here
-    session.commit()
-    
-## Session is closed on context exit
+            user2 = User(name="TxUser2")
+            await session.add(user2)
+
+            # Simulate an error before commit
+            if some_condition:
+                 raise ValueError("Something went wrong!")
+
+            # If no error, commit the changes
+            await session.commit()
+            print("Users added successfully.")
+
+        except ValueError as e:
+            print(f"Transaction failed and rolled back: {e}")
+            # Rollback is automatic here
+        # Session is closed automatically upon exiting the 'async with' block
 ```
-See `aiochemy/utils/retry.py` for how the Q context manager implements retries and transactions.
 
+### Mixins
 
+Achemy provides helpful mixins:
 
-### Custom Schemas
+*   **`PKMixin`**: Adds a standard `id: Mapped[uuid.UUID]` primary key column with a default UUID factory and `server_default`. Also adds the `find(pk_uuid)` classmethod as a convenient alias for `get(pk_uuid)`.
+*   **`UpdateMixin`**: Adds `created_at: Mapped[datetime]` and `updated_at: Mapped[datetime]` timestamp columns with automatic `server_default` and `onupdate` behavior. Provides classmethods like `last_created()`, `first_created()`, `last_modified()`, and `get_since(datetime)`.
 
-Create custom schemas by inheriting from `aiochemy.Schema` or `aiochemy.aio.Schema` and using Pydantic's features.
+```python
+from achemy import Base, PKMixin, UpdateMixin
+from sqlalchemy.orm import Mapped, mapped_column
 
+class MyModel(Base, PKMixin, UpdateMixin):
+    __tablename__ = "my_models"
+    name: Mapped[str] = mapped_column()
+
+# Now MyModel has id, created_at, updated_at columns and related methods.
+latest = await MyModel.last_modified()
+instance = await MyModel.find(some_uuid)
+```
 
 ## Examples
 
 For more comprehensive examples, refer to the following:
 
-* `aiochemy/demo` for sample models and usage.
-* `models.py` and `amodels.py` for synchronous and asynchronous model definitions.
+*   `achemy/demo/amodels.py`: Sample asynchronous model definitions demonstrating relationships and usage.
+*   `tests/`: Contains various unit and integration tests showcasing different features.
 
-
-
-This documentation provides a starting point for using Aiochemy. Explore the code examples and docstrings for more in-depth information.
+This documentation provides a starting point for using Achemy. Explore the code examples, tests, and docstrings for more in-depth information.

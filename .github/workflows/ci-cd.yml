@@ -17,7 +17,24 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi # Optional: Define environment for PyPI publishing secrets/protection rules
-      url: https://pypi.org/p/aiochemy # Optional: Link to PyPI project
+      url: https://pypi.org/p/achemy # Optional: Link to PyPI project
+
+    # Add PostgreSQL service container
+    services:
+      postgres:
+        image: postgres:latest # Use the latest official PostgreSQL image
+        env:
+          POSTGRES_USER: activealchemy # Match default test user
+          POSTGRES_PASSWORD: activealchemy # Match default test password
+          POSTGRES_DB: pythonapp-test # Match default test database
+        ports:
+          - 5434:5432 # Map container port 5432 to host port 5434 (matching test default)
+        # Add a health check to wait for the database to be ready
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
     - name: Checkout repository
@@ -28,6 +45,11 @@ jobs:
       with:
         python-version: '3.12'
 
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: 'stable' # Use the latest stable Go version
+
     - name: Install Poetry
       run: |
         pipx install poetry
@@ -36,13 +58,40 @@ jobs:
       run: |
         # Install project dependencies, but not the project itself as editable
         # This is often better for CI environments
-        poetry install --no-interaction --no-root
+        poetry install --no-interaction
 
     - name: Run checks (linting, formatting, etc.)
       run: |
         make check
 
+    - name: Install Goose migration tool
+      run: |
+        go install github.com/pressly/goose/v3/cmd/goose@latest
+        # Add GOPATH/bin to the PATH for subsequent steps
+        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+    - name: Apply database migrations with Goose
+      # Use the same environment variables as the test step for DB connection
+      env:
+        TEST_DB_USER: activealchemy
+        TEST_DB_PASSWORD: activealchemy
+        TEST_DB: pythonapp-test
+        TEST_DB_HOST: localhost # Service is accessible via localhost
+        TEST_DB_PORT: 5434 # Use the mapped host port
+      run: |
+        # Construct the DSN for goose, matching Makefile format
+        DB_DSN="postgres://${TEST_DB_USER}:${TEST_DB_PASSWORD}@${TEST_DB_HOST}:${TEST_DB_PORT}/${TEST_DB}?sslmode=disable"
+        # Run goose migrations
+        goose -dir migrations postgres "${DB_DSN}" up
+
     - name: Run tests
+      # Provide environment variables for the tests to connect to the service DB
+      env:
+        TEST_DB_USER: activealchemy
+        TEST_DB_PASSWORD: activealchemy
+        TEST_DB: pythonapp-test
+        TEST_DB_HOST: localhost # Service is accessible via localhost
+        TEST_DB_PORT: 5434 # Use the mapped host port
       run: |
         make test
 
