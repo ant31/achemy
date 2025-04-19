@@ -40,6 +40,22 @@ async def async_engine(db_config):
     print("Async engines disposed.")
 
 
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def acreate_tables(async_engine):
+    """Create all tables defined in Base.metadata once per session."""
+    print("acreate_tables: Creating all tables...")
+    async with async_engine.engine().begin() as conn:
+        # Create all tables associated with the Base metadata
+        await conn.run_sync(Base.metadata.create_all)
+    print("acreate_tables: All tables created.")
+    yield # Let the session run
+    # Optional: Drop tables after session if needed, but cleaning might be sufficient
+    # print("acreate_tables: Dropping all tables post-session...")
+    # async with async_engine.engine().begin() as conn:
+    #     await conn.run_sync(Base.metadata.drop_all)
+    # print("acreate_tables: All tables dropped.")
+
+
 class TestModel(Base):
     """Test model for select tests"""
     # Note: Removed aclean_tables fixture. Tests now rely on unique_id
@@ -73,11 +89,13 @@ async def setup_mixin_tests(async_engine, # Removed aclean_tables
 
 
 @pytest_asyncio.fixture(scope="session",autouse=True)
-async def aclean_tables(async_engine):
+async def aclean_tables(async_engine, acreate_tables): # Depend on acreate_tables
     """Clean all tables before and after tests"""
-    tables = ["test_select_models", "mock_pk_models", "mock_update_models",
+    # Ensure all known tables, including the one for SimpleModel, are listed
+    tables = ["simple_models_activerecord", # Added this table
+              "test_select_models", "mock_pk_models", "mock_update_models",
               "mock_combined_models", "resident_city", "resident", "city","country", ]
-    print("aclean")
+    print("aclean: Cleaning tables before session...")
     # Use the engine manager provided by the fixture
     # Get a session using the globally set engine manager
     async with await ActiveRecord.get_session() as session:
@@ -95,19 +113,22 @@ async def aclean_tables(async_engine):
                     print(f"Error deleting from table {table}: {e}")
         # No explicit commit needed with session.begin()
 
-    yield # Let the test run
+    yield # Let the session run
 
-    # Add cleanup *after* the test as well to ensure clean state
-    print("aclean (post-yield)")
+    # Add cleanup *after* the session as well to ensure clean state
+    print("aclean: Cleaning tables post-session...")
     async with await ActiveRecord.get_session() as session:
-        print("Cleaning tables post-yield...")
+        print("Cleaning tables post-session...")
         async with session.begin():
-            print("Cleaning tables post-yield in transaction...")
+            print("Cleaning tables post-session in transaction...")
             # Iterate in reverse to handle potential foreign key dependencies if any exist
             for table in reversed(tables):
-                print(f"Deleting from table post-yield: {table}")
+                print(f"Deleting from table post-session: {table}")
                 try:
+                    # Use DELETE instead of TRUNCATE for potentially better compatibility
+                    # and to avoid issues if tables were dropped/recreated differently.
                     await session.execute(text(f'DELETE FROM "{table}"'))
-                    print(f"Deleted from table post-yield: {table}")
+                    print(f"Deleted from table post-session: {table}")
                 except sqlalchemy.exc.SQLAlchemyError as e:
-                    print(f"Error deleting post-yield from table {table}: {e}")
+                    # Log errors but continue cleaning other tables
+                    print(f"Error deleting post-session from table {table}: {e}")
