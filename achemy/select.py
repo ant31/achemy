@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 TSelect = TypeVar("TSelect", bound="ActiveRecord")
 
 
-class Select(SaSelect[tuple[TSelect]]):  # Inherit directly from SQLAlchemy's Select
+class Select[TSelect](SaSelect):  # Inherit directly from SQLAlchemy's Select
     """
     Async-aware Select wrapper for ActiveRecord queries.
 

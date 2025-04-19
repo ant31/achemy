@@ -594,9 +594,7 @@ class ActiveRecord(AsyncAttrs):
             A Select object ready for filtering, ordering, etc.
         """
         # Create instance of our Select subclass
-        query = Select(cls, *args, **kwargs)  # Pass the target class 'cls'
-        # Set the context (target ORM class only)
-        query.set_context(cls)
+        query = Select[Self](cls, *args, **kwargs).set_context(cls)  # Pass the target class 'cls'
 
         logger.debug(f"Created Select query for {cls.__name__}")
         return query
