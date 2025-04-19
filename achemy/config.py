@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, aliases
 
-logger: logging.Logger = logging.getLogger("aiochemy")
+logger: logging.Logger = logging.getLogger("achemy")
 
 
 class BaseConfig(BaseModel):
@@ -31,10 +31,10 @@ class PostgreSQLConfigSchema(BaseConfig):
         async_uri() -> str: Returns the asynchronous DSN.
     """
 
-    db: str = Field(default="aiochemy-dev")
-    user: str = Field(default="aiochemy")
+    db: str = Field(default="achemy-dev")
+    user: str = Field(default="achemy")
     port: int = Field(default=5432)
-    password: str = Field(default="aiochemy")
+    password: str = Field(default="achemy")
     host: str = Field(default="localhost")
     params: dict[str, str | int] = Field(default={"sslmode": "disable"})
     driver: str = Field(default="asyncpg", validation_alias=aliases.AliasChoices("async_driver", "driver"))

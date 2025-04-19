@@ -1,19 +1,19 @@
-# Aiochemy Documentation
+# Achemy Documentation
 
-Aiochemy is a Python library that simplifies database interactions by providing an Active Record pattern and automatic session management. It supports both synchronous and asynchronous operations, making it flexible for various application needs. 
+Achemy is a Python library that simplifies database interactions by providing an Active Record pattern and automatic session management. It supports both synchronous and asynchronous operations, making it flexible for various application needs. 
 
 ## Installation
 
 ```bash
-pip install aiochemy
+pip install achemy
 ```
 
 ## Configuration
 
-Aiochemy uses a configuration schema to manage database connection details. Here's an example using the `PostgreSQLConfigSchema`:
+Achemy uses a configuration schema to manage database connection details. Here's an example using the `PostgreSQLConfigSchema`:
 
 ```python
-from aiochemy.config import PostgreSQLConfigSchema
+from achemy.config import PostgreSQLConfigSchema
 
 config = PostgreSQLConfigSchema(
     db="mydatabase",
@@ -32,7 +32,7 @@ The `ActiveEngine` class manages database connections.  You can set it up for sy
 **Synchronous:**
 
 ```python
-from aiochemy import ActiveEngine
+from achemy import ActiveEngine
 
 engine = ActiveEngine(config)
 ```
@@ -40,7 +40,7 @@ engine = ActiveEngine(config)
 **Asynchronous:**
 
 ```python
-from aiochemy.aio import ActiveEngine
+from achemy.aio import ActiveEngine
 
 engine = ActiveEngine(config)
 ```
@@ -48,7 +48,7 @@ engine = ActiveEngine(config)
 Set the engine for your models:
 
 ```python
-from aiochemy import ActiveRecord
+from achemy import ActiveRecord
 from myapp.models import MyModel # Assuming 'MyModel' inherits from ActiveRecord
 
 MyModel.set_engine(engine)
@@ -131,11 +131,11 @@ if user:
 
 ### Asynchronous Operations
 
-Aiochemy supports asynchronous operations using `asyncio` and `async/await`. Use `aiochemy.aio.ActiveRecord`, `aiochemy.aio.ActiveEngine`, and `aiochemy.aio.Schema`:
+Achemy supports asynchronous operations using `asyncio` and `async/await`. Use `achemy.aio.ActiveRecord`, `achemy.aio.ActiveEngine`, and `achemy.aio.Schema`:
 
 ```python
 import asyncio
-from aiochemy.aio import ActiveRecord, Schema
+from achemy.aio import ActiveRecord, Schema
 
 # ... (setup engine as described above, using the async ActiveEngine) ...
 
@@ -157,7 +157,7 @@ schema = User.Schema() # Convert schemas to model instances and back
 user_instance = schema.to_model(User)
 user_schema = User.Schema.model_validate(user_instance)
 ```
-See `aiochemy/demo/amodels.py` for a detailed example.
+See `achemy/demo/amodels.py` for a detailed example.
 
 ### Explicit sessions
 
@@ -211,22 +211,22 @@ with User.new_session() as session
     
 ## Session is closed on context exit
 ```
-See `aiochemy/utils/retry.py` for how the Q context manager implements retries and transactions.
+See `achemy/utils/retry.py` for how the Q context manager implements retries and transactions.
 
 
 
 ### Custom Schemas
 
-Create custom schemas by inheriting from `aiochemy.Schema` or `aiochemy.aio.Schema` and using Pydantic's features.
+Create custom schemas by inheriting from `achemy.Schema` or `achemy.aio.Schema` and using Pydantic's features.
 
 
 ## Examples
 
 For more comprehensive examples, refer to the following:
 
-* `aiochemy/demo` for sample models and usage.
+* `achemy/demo` for sample models and usage.
 * `models.py` and `amodels.py` for synchronous and asynchronous model definitions.
 
 
 
-This documentation provides a starting point for using Aiochemy. Explore the code examples and docstrings for more in-depth information.
+This documentation provides a starting point for using Achemy. Explore the code examples and docstrings for more in-depth information.

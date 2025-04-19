@@ -22,7 +22,7 @@ TypeMapping = {"string": "String",
                "boolean": "Boolean",
                "double": "Float"}
 
-env = Environment(loader=FileSystemLoader('/usr/share/aiochemy/'),
+env = Environment(loader=FileSystemLoader('/usr/share/achemy/'),
                   trim_blocks=True)
 tpl = env.get_template
 
@@ -38,9 +38,9 @@ env.filters['camelToSnake'] = camelToSnake
 
 
 class Alchemist(object):
-    """Bootstrap script for custom aiochemy models."""
+    """Bootstrap script for custom achemy models."""
 
-    # Tree of an aiochemy project
+    # Tree of an achemy project
     basetree = {
         '%(package)s': {
             'models': {
@@ -55,7 +55,7 @@ class Alchemist(object):
         'Changelog': tpl('Changelog.j2'),
         'README.md': tpl('README.md.j2'),
         'setup.py': tpl('setup.py.j2'),
-        '.aiochemy': '',
+        '.achemy': '',
     }
 
     # Additional tree for a debian package
@@ -78,7 +78,7 @@ class Alchemist(object):
         self.parser = ArgumentParser(
                 usage='%(prog)s command [PATH]',
                 version='%(prog)s 1.0',
-                description='Bootsrap a new aiochemy project.')
+                description='Bootsrap a new achemy project.')
         self.parser.add_argument(
                 'command',
                 metavar='command',
@@ -105,9 +105,9 @@ class Alchemist(object):
         getattr(self, self.args.command)()
 
     def bootstrap(self):
-        """Bootstrap a new aiochemy project."""
+        """Bootstrap a new achemy project."""
         if self.goto_root():
-            self.parser.error('Already in an aiochemy project.')
+            self.parser.error('Already in an achemy project.')
 
         try:
             makedirs(self.args.path)
@@ -140,7 +140,7 @@ class Alchemist(object):
             self.make_tree(self.debiantree)
 
         # Save context for future use of generate
-        with open('.aiochemy', 'w') as f:
+        with open('.achemy', 'w') as f:
             f.write(json.dumps(self.ctx))
 
     def goto_root(self):
@@ -148,7 +148,7 @@ class Alchemist(object):
         path = getcwd()
         self.cwd = path
         try:
-            while '.aiochemy' not in listdir(path):
+            while '.achemy' not in listdir(path):
                 if path == '/':
                     return False
                 path = dirname(path)
@@ -181,14 +181,14 @@ class Alchemist(object):
         self.ctx[var] = raw_input(f % (mess, default)) or default
 
     def generate(self):
-        """Generate models in the current aiochemy tree."""
+        """Generate models in the current achemy tree."""
         if not self.goto_root():
-            self.parser.error('Not in an aiochemy project.')
+            self.parser.error('Not in an achemy project.')
 
         self.ctx_in('list_sch', 'List of schemas to generate', '*')
         self.ctx_in('dot', 'Generate dot files', 'Y', '%s ? [%s/n] ')
 
-        with open('.aiochemy') as f:
+        with open('.achemy') as f:
             self.ctx.update(json.load(f))
 
         entities = []
@@ -220,7 +220,7 @@ class GraphModel(object):
     This object is able to generate the following format:
         - dot: graphviz representation of the entities relationship with one
           another
-        - python: aiochemy models
+        - python: achemy models
     """
 
     def __init__(self, entities=[]):

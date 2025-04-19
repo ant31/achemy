@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi # Optional: Define environment for PyPI publishing secrets/protection rules
-      url: https://pypi.org/p/aiochemy # Optional: Link to PyPI project
+      url: https://pypi.org/p/achemy # Optional: Link to PyPI project
 
     # Add PostgreSQL service container
     services:
