@@ -3,7 +3,8 @@ import os
 import pytest
 import pytest_asyncio
 import sqlalchemy
-from sqlalchemy import Column, String, text
+from sqlalchemy import String, text
+from sqlalchemy.orm import Mapped, mapped_column
 
 from achemy import ActiveEngine, ActiveRecord, Base, PostgreSQLConfigSchema
 
@@ -62,8 +63,8 @@ class TestModel(Base):
     # for isolation. Ensure all test data creation and queries use unique_id.
     __tablename__ = "test_select_models"
 
-    id = Column(String, primary_key=True)
-    name = Column(String, nullable=False)
+    id: Mapped[str] = mapped_column(primary_key=True, init=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, init=True)
 
 @pytest.fixture(scope="session")
 def test_model():

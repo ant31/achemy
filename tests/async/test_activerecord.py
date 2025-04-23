@@ -19,7 +19,7 @@ from achemy import ActiveEngine, ActiveRecord, Base, PKMixin, PostgreSQLConfigSc
 
 # Define a simple model for testing ActiveRecord methods directly
 # Inherit PKMixin to get an 'id' primary key
-class SimpleModel(Base, PKMixin):
+class SimpleModel(PKMixin, Base):
     __tablename__ = "simple_models_activerecord"
     # Add a field required by MappedAsDataclass (inherited via PKMixin)
     name: Mapped[str] = mapped_column(init=True, default=None)

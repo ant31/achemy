@@ -8,14 +8,16 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, MappedAsDataclass, declared_attr, mapped_column
 
-from .activerecord import ActiveRecord
 from .select import Select
 
 logger = logging.getLogger(__name__)
 
 
-class PKMixin(MappedAsDataclass, ActiveRecord):
-    """Primary key mixin combined with ActiveRecord functionality."""
+class PKMixin(MappedAsDataclass):
+    """
+    Primary key mixin combined with ActiveRecord functionality.
+    To be included in ActiveRecord subclasses only
+    """
 
     @declared_attr
     def id(cls) -> Mapped[uuid.UUID]:
@@ -34,8 +36,11 @@ class PKMixin(MappedAsDataclass, ActiveRecord):
         return await cls.get(pk_uuid, session=session)
 
 
-class UpdateMixin(MappedAsDataclass, ActiveRecord):
-    """Update/create timestamp tracking mixin combined with ActiveRecord functionality."""
+class UpdateMixin(MappedAsDataclass):
+    """
+    Update/create timestamp tracking mixin combined with ActiveRecord functionality.
+    To be included in ActiveRecord subclasses only
+    """
 
     @declared_attr
     def created_at(cls) -> Mapped[datetime]:
