@@ -1,8 +1,9 @@
 import logging
 from collections.abc import Sequence
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, Literal, Self
 
 import sqlalchemy as sa
+import sqlalchemy.dialects.postgresql as sa_pg
 from pydantic_core import to_jsonable_python
 from sqlalchemy import FromClause, ScalarResult, func
 from sqlalchemy.exc import SQLAlchemyError
@@ -373,6 +374,111 @@ class ActiveRecord(AsyncAttrs):
     async def save(self, commit: bool = False, session: AsyncSession | None = None) -> Self:
         """Add this instance to the database."""
         return await self.add(self, commit, session)
+
+    @classmethod
+    async def bulk_insert(
+        cls: type[Self],
+        objs: list[Self],
+        session: AsyncSession | None = None,
+        commit: bool = True,
+        on_conflict: Literal["fail", "nothing"] = "fail",
+        on_conflict_index_elements: list[str] | None = None,
+        fields: set[str] | None = None,
+        returning: bool = True,
+    ) -> Sequence[Self] | None:
+        """
+        Performs a bulk INSERT operation with conflict handling.
+
+        Handles conflicts based on the 'on_conflict' parameter.
+
+        Args:
+            objs: A list of model instances to insert.
+            session: Optional session to use. If None, gets a default session.
+            commit: If True, commit the session after the insert.
+            on_conflict: Strategy for handling conflicts:
+                         - "fail": Standard INSERT behavior; will raise IntegrityError on conflict.
+                         - "nothing": Use ON CONFLICT DO NOTHING; skips rows with conflicts.
+            on_conflict_index_elements: Optional list of column names for the conflict target
+                                        when on_conflict is "nothing". If None, the primary
+                                        key or a unique constraint is used implicitly.
+            fields: Optional set of field names to include in the insert values.
+            returning: Whether to return the inserted model instances.
+
+        Returns:
+            A sequence of the inserted model instances if returning is True,
+            otherwise None. Returns an empty list if returning is True and objs is empty.
+            Note: When using ON CONFLICT DO NOTHING, returning() only returns
+            the rows that were *actually inserted*, not the ones that were skipped.
+
+        Raises:
+            SQLAlchemyError: If a database error occurs (e.g., IntegrityError when on_conflict="fail").
+            TypeError: If the model class does not have a __table__ defined.
+        """
+        # Ensure __table__ is available before proceeding
+        if not hasattr(cls, "__table__"):
+            raise TypeError(
+                f"Class {cls.__name__} does not have a __table__ defined. "
+                "Ensure it is mapped correctly by SQLAlchemy ORM."
+            )
+
+        if not objs:
+            return [] if returning else None
+
+        values = [o.dump_model(with_meta=False, fields=fields) for o in objs]
+        insert_stmt = sa_pg.insert(cls).values(values)
+
+        # Apply conflict handling strategy
+        insert_stmt = cls._apply_conflict_handling_to_statement(insert_stmt, on_conflict, on_conflict_index_elements)
+
+        if returning:
+            insert_stmt = insert_stmt.returning(cls)
+
+        s = await cls.get_session(session)
+        result = None
+        try:
+            if session is None:  # Internal session, use context manager
+                async with s:
+                    result = await cls._execute_and_commit_bulk_statement(s, insert_stmt, commit)
+            else:  # External session, manage directly
+                result = await cls._execute_and_commit_bulk_statement(s, insert_stmt, commit)
+
+            res = result.scalars().all() if returning and result else None
+            return res
+        except SQLAlchemyError as e:
+            logger.error(
+                f"Error during bulk_insert for {cls.__name__} with on_conflict='{on_conflict}': {e}",
+                exc_info=True,
+            )
+            raise e
+
+    @staticmethod
+    def _apply_conflict_handling_to_statement(
+        stmt: sa_pg.Insert,
+        on_conflict_strategy: Literal["fail", "nothing"],  # Adjusted based on method signature
+        conflict_index_elements: list[str] | None,
+    ) -> sa_pg.Insert:
+        if on_conflict_strategy == "nothing":
+            return stmt.on_conflict_do_nothing(index_elements=conflict_index_elements)
+        if on_conflict_strategy == "fail":
+            # No ON CONFLICT clause needed for "fail" behavior
+            return stmt
+        if on_conflict_strategy == "update":  # type: ignore
+            raise NotImplementedError("ON CONFLICT DO UPDATE is not implemented yet.")
+        # This final check catches any strategy not covered, maintaining original behavior.
+        if on_conflict_strategy not in ("fail", "nothing"):  # type: ignore
+            raise ValueError(
+                f"Invalid on_conflict_strategy value: {on_conflict_strategy}. Use 'fail', 'nothing', or 'update'."
+            )
+        return stmt  # Should not be reached if previous conditions cover all valid Literal inputs
+
+    @staticmethod
+    async def _execute_and_commit_bulk_statement(
+        s: AsyncSession, stmt: Any, commit_flag: bool
+    ) -> Any:  # Returns SA's Result object
+        result = await s.execute(stmt)
+        if commit_flag:
+            await s.commit()
+        return result
 
     @classmethod
     async def add_all(
