@@ -7,7 +7,8 @@ import uuid  # Import uuid for tests
 from unittest.mock import patch  # For mocking
 
 import pytest
-from sqlalchemy import String  # Import String for MockColumnType
+from sqlalchemy import String, UniqueConstraint  # Import String for MockColumnType
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column  # Import Mapped and mapped_column
 
 from achemy import ActiveEngine, ActiveRecord, Base, PKMixin, PostgreSQLConfigSchema
@@ -22,8 +23,11 @@ from achemy import ActiveEngine, ActiveRecord, Base, PKMixin, PostgreSQLConfigSc
 class SimpleModel(PKMixin, Base):
     __tablename__ = "simple_models_activerecord"
     # Add a field required by MappedAsDataclass (inherited via PKMixin)
-    name: Mapped[str] = mapped_column(init=True, default=None)
+    name: Mapped[str] = mapped_column(init=True, default=None, nullable=False) # Made non-nullable for unique constraint
+    value: Mapped[int | None] = mapped_column(init=True, default=None) # Add another field for testing `fields`
     # Inherits engine and session factory from Base/ActiveRecord
+
+    __table_args__ = (UniqueConstraint("name", name="uq_simple_models_activerecord_name"),)
 
 
 # --- Test Cases ---
@@ -246,7 +250,7 @@ async def test_ensure_obj_session_gets_default_session(unique_id, caplog):
 async def test_instance_representation_and_data(unique_id):
     """Test instance representation (__str__, __repr__) and data methods (to_dict, dump_model, load, etc.)."""
     instance_name = f"repr_test_{unique_id}"
-    instance = SimpleModel(name=instance_name)
+    instance = SimpleModel(name=instance_name, value=3)
     instance_id = instance.id # Get the generated UUID
 
     # 1. Test __str__ and __repr__
@@ -281,7 +285,7 @@ async def test_instance_representation_and_data(unique_id):
 
     # 4. Test to_dict
     data_dict = instance.to_dict()
-    assert data_dict == {"id": instance_id, "name": instance_name}
+    assert data_dict == {"id": instance_id, "name": instance_name, "value": 3}
 
     data_dict_fields = instance.to_dict(fields={"name"})
     assert data_dict_fields == {"name": instance_name}
@@ -297,7 +301,7 @@ async def test_instance_representation_and_data(unique_id):
     # 5. Test dump_model (should be JSON serializable)
     dumped_data = instance.dump_model()
     # UUID should be converted to string
-    assert dumped_data == {"id": str(instance_id), "name": instance_name}
+    assert dumped_data == {"id": str(instance_id), "name": instance_name, "value": 3}
     # Test if it's actually JSON serializable (basic check)
     try:
         json.dumps(dumped_data)
@@ -693,3 +697,256 @@ async def test_helpers_and_error_cases(unique_id, capsys, caplog):
     # Check that other valid fields were still processed
     assert "good_column" in fields
     assert "id" in fields # From PKMixin
+
+
+# --- Test Cases for bulk_insert ---
+
+@pytest.mark.asyncio
+async def test_bulk_insert_simple(unique_id):
+    """Test basic bulk_insert functionality."""
+    Model = SimpleModel
+    name1 = f"bulk_simple1_{unique_id}"
+    name2 = f"bulk_simple2_{unique_id}"
+    objs_to_insert = [Model(name=name1, value=10), Model(name=name2, value=20)]
+
+    inserted_objs = await Model.bulk_insert(objs_to_insert)
+    assert inserted_objs is not None
+    assert len(inserted_objs) == 2
+    assert all(isinstance(obj, Model) for obj in inserted_objs)
+    assert {obj.name for obj in inserted_objs} == {name1, name2}
+    assert {obj.value for obj in inserted_objs} == {10, 20}
+
+    # Verify in DB
+    db_obj1 = await Model.find_by(name=name1)
+    db_obj2 = await Model.find_by(name=name2)
+    assert db_obj1 is not None
+    assert db_obj2 is not None
+    assert db_obj1.value == 10
+    assert db_obj2.value == 20
+
+    # Cleanup
+    await Model.delete(db_obj1)
+    await Model.delete(db_obj2)
+
+
+@pytest.mark.asyncio
+async def test_bulk_insert_no_commit_and_explicit_session(unique_id):
+    """Test bulk_insert with commit=False and then committing an explicit session."""
+    Model = SimpleModel
+    name1 = f"bulk_nocommit1_{unique_id}"
+    name2 = f"bulk_nocommit2_{unique_id}"
+    objs_to_insert = [Model(name=name1), Model(name=name2)]
+
+    async with await Model.get_session() as s:
+        inserted_objs = await Model.bulk_insert(objs_to_insert, session=s, commit=False)
+        assert inserted_objs is not None
+        assert len(inserted_objs) == 2
+
+        # Verify NOT in DB yet (via a different session)
+        assert await Model.find_by(name=name1) is None
+        assert await Model.find_by(name=name2) is None
+
+        # Verify they are in the original session's pending state (optional check)
+        # This check is a bit more involved as they are not full objects yet.
+        # For simplicity, we'll rely on the "not in DB" check above and "in DB after commit" below.
+
+        await s.commit() # Commit the explicit session
+
+    # Verify in DB now
+    db_obj1 = await Model.find_by(name=name1)
+    db_obj2 = await Model.find_by(name=name2)
+    assert db_obj1 is not None
+    assert db_obj2 is not None
+
+    # Cleanup
+    await Model.delete(db_obj1)
+    await Model.delete(db_obj2)
+
+
+@pytest.mark.asyncio
+async def test_bulk_insert_no_returning(unique_id):
+    """Test bulk_insert with returning=False."""
+    Model = SimpleModel
+    name1 = f"bulk_noreturn_{unique_id}"
+    objs_to_insert = [Model(name=name1)]
+
+    inserted_objs = await Model.bulk_insert(objs_to_insert, returning=False)
+    assert inserted_objs is None
+
+    # Verify in DB
+    db_obj1 = await Model.find_by(name=name1)
+    assert db_obj1 is not None
+
+    # Cleanup
+    await Model.delete(db_obj1)
+
+
+@pytest.mark.asyncio
+async def test_bulk_insert_empty_list():
+    """Test bulk_insert with an empty list of objects."""
+    Model = SimpleModel
+    inserted_objs = await Model.bulk_insert([])
+    assert inserted_objs == []
+
+    inserted_objs_no_return = await Model.bulk_insert([], returning=False)
+    assert inserted_objs_no_return is None
+
+
+@pytest.mark.asyncio
+async def test_bulk_insert_on_conflict_fail(unique_id):
+    """Test bulk_insert with on_conflict='fail' (default)."""
+    Model = SimpleModel
+    name_conflict = f"bulk_conflict_fail_{unique_id}"
+
+    # Insert initial record
+    initial_obj = await Model(name=name_conflict, value=1).save(commit=True)
+    assert initial_obj is not None
+
+    objs_to_insert = [
+        Model(name=name_conflict, value=2), # This will conflict
+        Model(name=f"bulk_conflict_fail_ok_{unique_id}", value=3)
+    ]
+
+    with pytest.raises(IntegrityError): # Or the specific DB driver error
+        await Model.bulk_insert(objs_to_insert, on_conflict="fail")
+
+    # Verify the non-conflicting record was NOT inserted due to transaction rollback
+    assert await Model.find_by(name=f"bulk_conflict_fail_ok_{unique_id}") is None
+    # Verify initial object still exists with original value
+    db_initial = await Model.get(initial_obj.id)
+    assert db_initial is not None
+    assert db_initial.value == 1
+
+
+    # Cleanup
+    await Model.delete(initial_obj)
+
+
+@pytest.mark.asyncio
+async def test_bulk_insert_on_conflict_nothing(unique_id):
+    """Test bulk_insert with on_conflict='nothing'."""
+    Model = SimpleModel
+    name_conflict = f"bulk_conflict_nothing_{unique_id}"
+    name_ok = f"bulk_conflict_nothing_ok_{unique_id}"
+
+    # Insert initial record
+    initial_obj = await Model(name=name_conflict, value=100).save(commit=True)
+    assert initial_obj is not None
+
+    objs_to_insert = [
+        Model(name=name_conflict, value=200), # This will conflict and be skipped
+        Model(name=name_ok, value=300)      # This should be inserted
+    ]
+
+    # Use default index_elements (PK or unique constraint on 'name')
+    inserted_objs = await Model.bulk_insert(objs_to_insert, on_conflict="nothing")
+
+    assert inserted_objs is not None
+    assert len(inserted_objs) == 1 # Only the non-conflicting one is returned
+    assert inserted_objs[0].name == name_ok
+    assert inserted_objs[0].value == 300
+
+    # Verify in DB
+    db_initial = await Model.get(initial_obj.id)
+    assert db_initial is not None
+    assert db_initial.name == name_conflict
+    assert db_initial.value == 100 # Original value should remain
+
+    db_ok = await Model.find_by(name=name_ok)
+    assert db_ok is not None
+    assert db_ok.value == 300
+
+    # Cleanup
+    await Model.delete(initial_obj)
+    await Model.delete(db_ok)
+
+
+@pytest.mark.asyncio
+async def test_bulk_insert_on_conflict_nothing_specific_index(unique_id):
+    """Test bulk_insert with on_conflict='nothing' and specific index_elements."""
+    Model = SimpleModel
+    name_conflict_idx = f"bulk_conflict_idx_{unique_id}"
+    name_ok_idx = f"bulk_conflict_idx_ok_{unique_id}"
+
+    # Insert initial record
+    initial_obj = await Model(name=name_conflict_idx, value=50).save(commit=True)
+    assert initial_obj is not None
+
+    objs_to_insert = [
+        Model(name=name_conflict_idx, value=55), # Conflicts on 'name'
+        Model(name=name_ok_idx, value=65)
+    ]
+
+    # Specify the unique constraint on 'name'
+    inserted_objs = await Model.bulk_insert(
+        objs_to_insert,
+        on_conflict="nothing",
+        on_conflict_index_elements=["name"] # Corresponds to uq_simple_models_activerecord_name
+    )
+
+    assert inserted_objs is not None
+    assert len(inserted_objs) == 1
+    assert inserted_objs[0].name == name_ok_idx
+    assert inserted_objs[0].value == 65
+
+    # Verify in DB
+    db_initial = await Model.get(initial_obj.id)
+    assert db_initial is not None
+    assert db_initial.value == 50 # Unchanged
+
+    db_ok = await Model.find_by(name=name_ok_idx)
+    assert db_ok is not None
+    assert db_ok.value == 65
+
+    # Cleanup
+    await Model.delete(initial_obj)
+    if db_ok:
+        await Model.delete(db_ok)
+
+
+@pytest.mark.asyncio
+async def test_bulk_insert_with_fields(unique_id):
+    """Test bulk_insert using the 'fields' parameter."""
+    Model = SimpleModel
+    name1 = f"bulk_fields1_{unique_id}"
+    name2 = f"bulk_fields2_{unique_id}"
+
+    # Create full model instances, but only 'name' should be inserted
+    # 'value' has a default of None in the model, but we are not providing it via 'fields'
+    objs_to_insert = [
+        Model(name=name1, value=1000), # value should be ignored
+        Model(name=name2, value=2000)  # value should be ignored
+    ]
+
+    inserted_objs = await Model.bulk_insert(objs_to_insert, fields={"id", "name"})
+    # Note: 'id' is often auto-generated by DB or SQLAlchemy before insert if not provided.
+    # If 'id' is part of 'fields', its pre-generated value from the Python side would be used.
+    # If PKMixin's default_factory is client-side, 'id' will be in dump_model().
+
+    assert inserted_objs is not None
+    assert len(inserted_objs) == 2
+    assert {obj.name for obj in inserted_objs} == {name1, name2}
+
+    # Verify in DB
+    db_obj1 = await Model.find_by(name=name1)
+    db_obj2 = await Model.find_by(name=name2)
+
+    assert db_obj1 is not None
+    assert db_obj1.value is None # Value should be its default (None) as it wasn't in 'fields'
+
+    assert db_obj2 is not None
+    assert db_obj2.value is None # Value should be its default (None)
+
+    # Cleanup
+    await Model.delete(db_obj1)
+    await Model.delete(db_obj2)
+
+
+@pytest.mark.asyncio
+async def test_bulk_insert_invalid_on_conflict_value(unique_id):
+    """Test bulk_insert raises ValueError for invalid on_conflict."""
+    Model = SimpleModel
+    objs_to_insert = [Model(name=f"invalid_conflict_{unique_id}")]
+
+    with pytest.raises(ValueError, match="Invalid on_conflict_strategy value: bogus_value"):
+        await Model.bulk_insert(objs_to_insert, on_conflict="bogus_value") # type: ignore

@@ -21,6 +21,7 @@ class Select[TSelect](SaSelect):  # Inherit directly from SQLAlchemy's Select
 
     Provides helper methods like `scalars()` for convenience.
     """
+
     inherit_cache: ClassVar[bool] = True
 
     # Store the target ORM class directly
