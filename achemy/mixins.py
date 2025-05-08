@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class PKMixin(MappedAsDataclass):
+    __abstract__ = True
     """
     Primary key mixin combined with ActiveRecord functionality.
     To be included in ActiveRecord subclasses only
@@ -37,6 +38,7 @@ class PKMixin(MappedAsDataclass):
 
 
 class UpdateMixin(MappedAsDataclass):
+    __abstract__ = True
     """
     Update/create timestamp tracking mixin combined with ActiveRecord functionality.
     To be included in ActiveRecord subclasses only

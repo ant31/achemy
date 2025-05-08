@@ -21,28 +21,13 @@ class Select[TSelect](SaSelect):  # Inherit directly from SQLAlchemy's Select
 
     Provides helper methods like `scalars()` for convenience.
     """
-
-    # inherit_cache is a SQLAlchemy attribute, keep it if needed for specific caching behaviors
     inherit_cache: ClassVar[bool] = True
 
     # Store the target ORM class directly
     _orm_cls: type[TSelect]
-    # _session: AsyncSession | None # Session is no longer stored here
 
-    # # Need to override __init__ carefully to maintain Select's signature
-    # # while adding our custom attributes. Using __new__ might be safer
-    # but __init__ is often simpler if done right. Let's try __init__.
-
-    # We cannot directly change the signature of __init__ as it breaks Select.
-    # Instead, we'll add attributes *after* super().__init__ or use a factory method.
-
-    # Let's use a factory method approach within ActiveRecord.select()
-    # to keep this class cleaner and closer to SaSelect.
-
-    # This helper method will be called internally.
     def set_context(self, cls: type[TSelect]):  # Remove session from context
         self._orm_cls = cls
-        # self._session = session # Session no longer stored
         return self  # Return self for chaining
 
     async def scalars(self, session: AsyncSession) -> ScalarResult[TSelect]:  # Session is now required
@@ -60,16 +45,7 @@ class Select[TSelect](SaSelect):  # Inherit directly from SQLAlchemy's Select
             ValueError: If the session is invalid (though type hint enforces it).
             SQLAlchemyError: If the database query fails.
         """
-        # execution_session = session or self._session # Session is now required
-        # if not execution_session:
-        #     # Try to get a session from the class if none was provided
-        #     logger.debug(f"No explicit session for scalars(), getting session from {self._orm_cls.__name__}")
-        #     execution_session = await self._orm_cls.get_session()  # Use class method to get session
-
-        # if not execution_session:
-        #     raise ValueError(f"Cannot execute query for {self._orm_cls.__name__}: No session provided or available.")
-
-        if not session:  # Basic check, though type hint should prevent None
+        if not session:
             raise ValueError(f"Cannot execute query for {self._orm_cls.__name__}: Session is required.")
 
         try:
