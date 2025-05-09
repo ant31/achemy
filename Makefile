@@ -179,3 +179,8 @@ rename:
 	ack achemy -l | xargs -i{} sed -r -i "s/achemy/achemy/g" {}
 	ack Achemy -i -l | xargs -i{} sed -r -i "s/Achemy/Achemy/g" {}
 	ack ACHEMY -i -l | xargs -i{} sed -r -i "s/ACHEMY/ACHEMY/g" {}
+
+
+BUMP ?= patch
+bump:
+	poetry run bump-my-version bump $(BUMP)

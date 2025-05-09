@@ -6,6 +6,8 @@ from achemy.mixins import PKMixin, UpdateMixin
 from achemy.schema import Schema
 from achemy.select import Select
 
+__version__ = "0.2.2"
+
 __all__ = [
     "ActiveEngine",
     "ActiveRecord",
