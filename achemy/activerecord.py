@@ -1,4 +1,5 @@
 import logging
+import warnings
 from collections.abc import Sequence
 from typing import Any, ClassVar, Literal, Self
 
@@ -54,7 +55,21 @@ class ActiveRecord(AsyncAttrs):
     # --- Engine Management ---
     @classmethod
     def engine(cls) -> ActiveEngine:
-        """Return the active engine associated with this class."""
+        """
+        Return the active engine associated with this class.
+
+        .. deprecated:: 0.4.0
+            This method is deprecated. Manage the ``ActiveEngine`` instance directly
+            in your application's context instead of accessing it via the model class.
+        """
+        warnings.warn(
+            (
+                "ActiveRecord.engine() is deprecated and will be removed in a future version. "
+                "Manage the ActiveEngine instance directly in your application."
+            ),
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if not hasattr(cls, "__active_engine__") or cls.__active_engine__ is None:
             raise ValueError(f"No active engine configured for class {cls.__name__}")
         return cls.__active_engine__
@@ -63,8 +78,19 @@ class ActiveRecord(AsyncAttrs):
     def set_engine(cls, engine: ActiveEngine):
         """
         Set the ActiveEngine instance for this class and its subclasses.
-        Also retrieves the session factory from the engine.
+
+        .. deprecated:: 0.4.0
+            This method is deprecated. Instantiate ``ActiveEngine`` and get sessions
+            from it directly, rather than attaching it globally to models.
         """
+        warnings.warn(
+            (
+                "ActiveRecord.set_engine() is deprecated and will be removed in a future version. "
+                "Instantiate ActiveEngine and get sessions from it directly."
+            ),
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if not isinstance(engine, ActiveEngine):
             raise TypeError("Engine must be an instance of ActiveEngine")
         cls.__active_engine__ = engine
@@ -81,8 +107,19 @@ class ActiveRecord(AsyncAttrs):
     def session_factory(cls) -> async_sessionmaker[AsyncSession]:
         """
         Return the session factory associated with this class.
-        Raises ValueError if the engine/session factory hasn't been set.
+
+        .. deprecated:: 0.4.0
+            This method is deprecated. Get a session factory directly from your
+            ``ActiveEngine`` instance via ``engine.session()``.
         """
+        warnings.warn(
+            (
+                "ActiveRecord.session_factory() is deprecated and will be removed in a future version. "
+                "Get a session factory directly from your ActiveEngine instance."
+            ),
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if cls._session_factory is None:
             # Attempt to set it if engine exists but factory wasn't retrieved?
             if hasattr(cls, "__active_engine__") and cls.__active_engine__:
@@ -98,15 +135,20 @@ class ActiveRecord(AsyncAttrs):
         """
         Gets a new AsyncSession instance from the class's session factory.
 
-        This session should be used in a context manager (`async with`) to ensure
-        proper transaction handling and resource cleanup.
-
-        Returns:
-            A new AsyncSession instance.
-
-        Raises:
-            ValueError: If the session factory is not configured.
+        .. deprecated:: 0.4.0
+            This method is deprecated. Get a session directly from a session factory
+            obtained from your ``ActiveEngine`` instance. Example:
+            ``_, session_factory = engine.session()``
+            ``async with session_factory() as session: ...``
         """
+        warnings.warn(
+            (
+                "ActiveRecord.get_session() is deprecated and will be removed in a future version. "
+                "Get a session directly from a session factory obtained from your ActiveEngine instance."
+            ),
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # Create a new session from the factory
         factory = cls.session_factory()  # Raises ValueError if not configured
         new_session = factory()

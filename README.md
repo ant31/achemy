@@ -66,30 +66,29 @@ class User(AppBase, PKMixin, UpdateMixin):
     is_active: Mapped[bool] = mapped_column(default=True)
 ```
 
-### Step 3: Initialize the Engine
+### Step 3: Initialize and Use the Engine
 
-In your application's entry point, create the engine and link it to your models.
+In your application's entry point, create the `ActiveEngine`. You will use this engine instance to create sessions for your database operations.
 
 ```python
 # main.py
 import asyncio
 
-from achemy import ActiveEngine, ActiveRecord
-
+from achemy import ActiveEngine
 from config import db_config
 from models import User
 
-# Create the engine instance
+# Create the engine instance. This should be a singleton in your application.
 engine = ActiveEngine(db_config)
 
-# Set the engine globally for all ActiveRecord models
-ActiveRecord.set_engine(engine)
+# Get a session factory from the engine.
+_db_engine, session_factory = engine.session()
 
 
 async def main():
     # Your application logic here
     # Example: create a user
-    async with User.get_session() as session:
+    async with session_factory() as session:
         new_user = User(name="Alice", email="alice@example.com")
         await new_user.save(session=session)
         await session.commit()
@@ -104,10 +103,13 @@ if __name__ == "__main__":
 
 ### Creating and Saving Records
 
-All database operations must be performed within an explicit session context using `async with Model.get_session() as session:`. This ensures proper transaction management and connection handling. Commits must be handled on the session object.
+All database operations must be performed within an explicit session context. You get a session from a session factory, which is created by your `ActiveEngine` instance. This ensures proper transaction management and connection handling. Commits must be handled on the session object.
 
 ```python
-async with User.get_session() as session:
+# Assume 'engine' is an initialized ActiveEngine instance
+_db_engine, session_factory = engine.session()
+
+async with session_factory() as session:
     # Create an instance and save it.
     user = User(name="Alice", email="alice@example.com")
     await user.save(session=session)
@@ -129,7 +131,8 @@ The session context manager automatically handles rollback on exceptions. See th
 ### Querying Records
 
 ```python
-async with User.get_session() as session:
+# Assume 'session_factory' has been created from your ActiveEngine instance.
+async with session_factory() as session:
     # Get all users (use with caution on large tables)
     all_users = await User.all(session)
 
@@ -171,14 +174,16 @@ query = (
 )
 
 # Execute the query within a session
-async with User.get_session() as session:
+# Assume 'session_factory' has been created from your ActiveEngine instance.
+async with session_factory() as session:
     selected_users = await User.all(session, query=query)
 ```
 
 ### Updating Records
 
 ```python
-async with User.get_session() as session:
+# Assume 'session_factory' has been created from your ActiveEngine instance.
+async with session_factory() as session:
     user = await User.find_by(session, name="Alice")
     if user:
         user.name = "Alicia"
@@ -189,7 +194,8 @@ async with User.get_session() as session:
 ### Deleting Records
 
 ```python
-async with User.get_session() as session:
+# Assume 'session_factory' has been created from your ActiveEngine instance.
+async with session_factory() as session:
     user = await User.find_by(session, name="Bob")
     if user:
         await User.delete(user, session=session)
@@ -201,9 +207,10 @@ async with User.get_session() as session:
 For high-performance inserts, use `bulk_insert`.
 
 ```python
+# Assume 'session_factory' has been created from your ActiveEngine instance.
 from sqlalchemy.exc import IntegrityError
 
-async with User.get_session() as session:
+async with session_factory() as session:
     users_to_bulk_insert = [
         User(name="Eve", email="eve@example.com"),
         User(name="Frank", email="frank@example.com"),
@@ -243,11 +250,13 @@ Here’s how to build a simple User API. For API *input* and *output*, we will d
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import AsyncGenerator
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, EmailStr
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from achemy import ActiveEngine, ActiveRecord
+from achemy import ActiveEngine
 from config import db_config  # Assuming you have a config.py
 from models import User  # Assuming you have a models.py
 
@@ -257,11 +266,14 @@ from models import User  # Assuming you have a models.py
 async def lifespan(app: FastAPI):
     # Initialize ActiveEngine on startup
     engine = ActiveEngine(db_config)
-    ActiveRecord.set_engine(engine)
+    _db_engine, session_factory = engine.session()
+    # Store engine and session factory in the app's state
+    app.state.engine = engine
+    app.state.session_factory = session_factory
     print("Database engine initialized.")
     yield
     # Dispose engines on shutdown
-    await engine.dispose_engines()
+    await app.state.engine.dispose_engines()
     print("Database engines disposed.")
 
 
@@ -289,39 +301,47 @@ class UserOut(BaseModel):
     updated_at: datetime
 
 
+# --- Session Dependency ---
+async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency to create and clean up a session per request."""
+    session_factory = request.app.state.session_factory
+    async with session_factory() as session:
+        yield session
+
+
 # --- API Endpoints ---
 @app.post("/users/", response_model=UserOut, status_code=201)
-async def create_user(user_in: UserIn):
+async def create_user(user_in: UserIn, session: AsyncSession = Depends(get_db_session)):
     """Create a new user."""
-    async with User.get_session() as session:
-        # Check if user already exists
-        existing_user = await User.find_by(session, email=user_in.email)
-        if existing_user:
-            raise HTTPException(status_code=400, detail="Email already registered.")
+    # The session is now managed by the dependency.
+    # Check if user already exists
+    existing_user = await User.find_by(session, email=user_in.email)
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered.")
 
-        # Convert the input Pydantic model to a SQLAlchemy model instance
-        user_model = User(**user_in.model_dump())
+    # Convert the input Pydantic model to a SQLAlchemy model instance
+    user_model = User(**user_in.model_dump())
 
-        # Save the model to the database
-        await user_model.save(session=session)
-        await session.commit()
+    # Save the model to the database
+    await user_model.save(session=session)
+    await session.commit()
 
-        # The session context manager handles rollback on exceptions.
-        # The user_model is now persisted and can be returned.
-        return user_model
+    # The dependency handles rollback on exceptions.
+    # The user_model is now persisted and can be returned.
+    return user_model
 
 
 @app.get("/users/{user_id}", response_model=UserOut)
-async def get_user(user_id: uuid.UUID):
+async def get_user(user_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
     """Retrieve a user by their ID."""
-    async with User.get_session() as session:
-        user = await User.find(session, user_id)  # PKMixin provides .find()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found.")
+    # The session is now managed by the dependency.
+    user = await User.find(session, user_id)  # PKMixin provides .find()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
 
-        # The User model instance is automatically serialized by FastAPI
-        # into our Pydantic `UserOut` schema for the response.
-        return user
+    # The User model instance is automatically serialized by FastAPI
+    # into our Pydantic `UserOut` schema for the response.
+    return user
 ```
 
 ### Automatic Schema Generation (For Prototyping)
@@ -335,7 +355,8 @@ from models import User
 UserSchema = User.pydantic_schema()
 
 # Convert a model instance directly to a Pydantic instance
-async with User.get_session() as session:
+# Assume 'session_factory' has been created from your ActiveEngine instance.
+async with session_factory() as session:
     user_instance = await User.find_by(session, name="Alice")
     if user_instance:
         pydantic_user = user_instance.to_pydantic()
@@ -354,7 +375,8 @@ uvicorn api:app --reload
 Achemy models provide helper methods for data conversion:
 
 ```python
-async with User.get_session() as session:
+# Assume 'session_factory' has been created from your ActiveEngine instance.
+async with session_factory() as session:
     user = await User.find_by(session, name="Alicia")
 
 if user:
@@ -376,14 +398,15 @@ new_user_instance = User.load(new_user_data)
 
 Achemy requires explicit session management for all database operations. This ensures that every action is part of a well-defined transaction, providing data integrity and optimal performance.
 
-The standard pattern is to use `Model.get_session()` within an `async with` block. This block creates a session and a transaction. If the block completes successfully, you can commit the transaction with `await session.commit()`. If an exception occurs, the transaction is automatically rolled back.
+The standard pattern is to get a session factory from your `ActiveEngine` instance and use it within an `async with` block. This block creates a session and a transaction. If the block completes successfully, you can commit the transaction with `await session.commit()`. If an exception occurs, the transaction is automatically rolled back.
 
 ```python
 from models import City  # Assuming another model exists
 
 
 async def complex_operation():
-    async with User.get_session() as session:
+    # Assume 'session_factory' has been created from your ActiveEngine instance.
+    async with session_factory() as session:
         try:
             user_frank = User(name="Frank", email="frank@acme.com")
             # Pass the explicit session to all operations
