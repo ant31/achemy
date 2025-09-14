@@ -3,7 +3,6 @@ Tests for achemy/activerecord.py
 """
 import asyncio
 import json  # For dump_model test
-import logging  # Import logging
 import uuid  # Import uuid for tests
 from unittest.mock import patch  # For mocking
 
