@@ -247,6 +247,8 @@ UserSchema = User.pydantic_schema()
 # You can now use UserSchema like any other Pydantic model
 # For example, to inspect its JSON schema for OpenAPI documentation
 print(UserSchema.model_json_schema())
+
+> **Note on Static Type Checking**: Because Achemy generates Pydantic schema fields at runtime, static type checkers like Mypy cannot infer the attributes of the generated schema class (`UserSchema` in this example). If you use a strict type checker, you may need to use `# type: ignore` when accessing fields on instances of an auto-generated schema to avoid false-positive errors.
 ```
 
 You can also convert a model instance directly to a Pydantic instance:

@@ -8,7 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, MappedAsDataclass, declared_attr, mapped_column
 
-from .select import Select
+from sqlalchemy import Select
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ class UpdateMixin(MappedAsDataclass):
 
     @classmethod
     async def get_since(
-        cls, session: AsyncSession, date: datetime, query: Select[Self] | None = None
+        cls, session: AsyncSession, date: datetime, query: Select[tuple[Self]] | None = None
     ) -> Sequence[Self]:
         """
         Returns all instances modified since a given datetime.

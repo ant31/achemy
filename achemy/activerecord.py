@@ -5,7 +5,7 @@ from typing import Any, ClassVar, Literal, Self
 import sqlalchemy as sa
 import sqlalchemy.dialects.postgresql as sa_pg
 from pydantic_core import to_jsonable_python
-from sqlalchemy import FromClause, ScalarResult, func
+from sqlalchemy import FromClause, ScalarResult, Select, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
     AsyncAttrs,
@@ -21,7 +21,6 @@ from sqlalchemy.orm import (
 # Assuming ActiveEngine is imported from the refactored engine file
 from achemy.engine import ActiveEngine
 from achemy.schema import Schema
-from achemy.select import Select
 
 logger = logging.getLogger(__name__)
 
@@ -352,13 +351,14 @@ class ActiveRecord(AsyncAttrs):
         """
         Performs a bulk INSERT operation with conflict handling.
 
-        Handles conflicts based on the 'on_conflict' parameter.
+        Handles conflicts based on the 'on_conflict' parameter. This feature
+        is currently only supported for the PostgreSQL dialect.
 
         Args:
             objs: A list of model instances to insert.
-            session: Optional session to use. If None, gets a default session.
+            session: The active AsyncSession.
             commit: If True, commit the session after the insert.
-            on_conflict: Strategy for handling conflicts:
+            on_conflict: Strategy for handling conflicts (PostgreSQL only):
                          - "fail": Standard INSERT behavior; will raise IntegrityError on conflict.
                          - "nothing": Use ON CONFLICT DO NOTHING; skips rows with conflicts.
             on_conflict_index_elements: Optional list of column names for the conflict target
@@ -374,26 +374,38 @@ class ActiveRecord(AsyncAttrs):
             the rows that were *actually inserted*, not the ones that were skipped.
 
         Raises:
-            SQLAlchemyError: If a database error occurs (e.g., IntegrityError when on_conflict="fail").
+            SQLAlchemyError: If a database error occurs.
+            NotImplementedError: If on_conflict is used with a non-PostgreSQL dialect.
             TypeError: If the model class does not have a __table__ defined.
         """
-        # Ensure __table__ is available before proceeding
         if not hasattr(cls, "__table__"):
-            raise TypeError(
-                f"Class {cls.__name__} does not have a __table__ defined. "
-                "Ensure it is mapped correctly by SQLAlchemy ORM."
-            )
+            raise TypeError(f"Class {cls.__name__} does not have a __table__ defined.")
 
         if not objs:
             return [] if returning else None
 
         values = [o.dump_model(with_meta=False, fields=fields) for o in objs]
-        insert_stmt = sa_pg.insert(cls).values(values)
+        dialect = session.bind.dialect.name if session.bind else "unknown"
 
-        # Apply conflict handling strategy
-        insert_stmt = cls._apply_conflict_handling_to_statement(insert_stmt, on_conflict, on_conflict_index_elements)
+        if dialect == "postgresql":
+            stmt = sa_pg.insert(cls)
+            if on_conflict == "nothing":
+                stmt = stmt.on_conflict_do_nothing(index_elements=on_conflict_index_elements)
+            elif on_conflict != "fail":
+                raise ValueError(f"Invalid on_conflict strategy '{on_conflict}' for PostgreSQL.")
+        else:
+            if on_conflict != "fail":
+                raise NotImplementedError(
+                    f"on_conflict='{on_conflict}' is only supported for 'postgresql', "
+                    f"not for the current '{dialect}' dialect."
+                )
+            stmt = sa.insert(cls)
+
+        insert_stmt = stmt.values(values)
 
         if returning:
+            # NOTE: `returning` support can vary between backends, but is
+            # common enough for core support (PostgreSQL, SQLite, etc.)
             insert_stmt = insert_stmt.returning(cls)
 
         try:
@@ -406,26 +418,6 @@ class ActiveRecord(AsyncAttrs):
                 exc_info=True,
             )
             raise e
-
-    @staticmethod
-    def _apply_conflict_handling_to_statement(
-        stmt: sa_pg.Insert,
-        on_conflict_strategy: Literal["fail", "nothing"],  # Adjusted based on method signature
-        conflict_index_elements: list[str] | None,
-    ) -> sa_pg.Insert:
-        if on_conflict_strategy == "nothing":
-            return stmt.on_conflict_do_nothing(index_elements=conflict_index_elements)
-        if on_conflict_strategy == "fail":
-            # No ON CONFLICT clause needed for "fail" behavior
-            return stmt
-        if on_conflict_strategy == "update":  # type: ignore
-            raise NotImplementedError("ON CONFLICT DO UPDATE is not implemented yet.")
-        # This final check catches any strategy not covered, maintaining original behavior.
-        if on_conflict_strategy not in ("fail", "nothing"):  # type: ignore
-            raise ValueError(
-                f"Invalid on_conflict_strategy value: {on_conflict_strategy}. Use 'fail', 'nothing', or 'update'."
-            )
-        return stmt  # Should not be reached if previous conditions cover all valid Literal inputs
 
     @staticmethod
     async def _execute_and_commit_bulk_statement(
@@ -609,7 +601,7 @@ class ActiveRecord(AsyncAttrs):
     # --- Querying Methods ---
 
     @classmethod
-    def select(cls, *args, **kwargs) -> Select[Self]:  # Remove session argument
+    def select(cls, *args: Any, **kwargs: Any) -> Select[tuple[Self]]:
         """
         Creates a base SQLAlchemy Select statement targeting this class.
 
@@ -618,16 +610,14 @@ class ActiveRecord(AsyncAttrs):
             **kwargs: Keyword arguments passed to SQLAlchemy's select().
 
         Returns:
-            A Select object ready for filtering, ordering, etc.
+            A SQLAlchemy Select object ready for filtering, ordering, etc.
         """
-        # Create instance of our Select subclass
-        query = Select[Self](cls, *args, **kwargs).set_context(cls)  # Pass the target class 'cls'
-
+        query = sa.select(cls, *args, **kwargs)
         logger.debug(f"Created Select query for {cls.__name__}")
         return query
 
     @classmethod
-    def where(cls, *args, **kwargs) -> Select[Self]:  # Remove session argument
+    def where(cls, *args: Any, **kwargs: Any) -> Select[tuple[Self]]:
         """
         Creates a Select statement with WHERE criteria applied.
 
@@ -661,16 +651,15 @@ class ActiveRecord(AsyncAttrs):
         return query
 
     @classmethod
-    async def _execute_query(cls, query: Select[Self], session: AsyncSession) -> ScalarResult[Self]:  # Session required
+    async def _execute_query(cls, query: Select[tuple[Self]], session: AsyncSession) -> ScalarResult[Self]:
         """Internal helper to execute a Select query and return scalars."""
-        # The Select object now requires the session in its scalars() method
         logger.debug(f"Executing query for {cls.__name__} with session {session}: {query}")
-        # Pass the required session to scalars()
-        return await query.scalars(session=session)
+        result = await session.execute(query)
+        return result.scalars()
 
     @classmethod
     async def all(
-        cls, session: AsyncSession, query: Select[Self] | None = None, limit: int | None = None
+        cls, session: AsyncSession, query: Select[tuple[Self]] | None = None, limit: int | None = None
     ) -> Sequence[Self]:
         """
         Returns all instances matching the query.
@@ -695,7 +684,7 @@ class ActiveRecord(AsyncAttrs):
     async def first(
         cls,
         session: AsyncSession,
-        query: Select[Self] | None = None,
+        query: Select[tuple[Self]] | None = None,
         order_by: Any = None,  # ColumnElement or similar
     ) -> Self | None:
         """

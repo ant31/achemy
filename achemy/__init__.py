@@ -4,7 +4,6 @@ from achemy.config import PostgreSQLConfigSchema
 from achemy.engine import ActiveEngine
 from achemy.mixins import PKMixin, UpdateMixin
 from achemy.schema import Schema
-from achemy.select import Select
 
 __version__ = "0.3.0"
 
@@ -15,6 +14,5 @@ __all__ = [
     "PKMixin",
     "PostgreSQLConfigSchema",
     "Schema",
-    "Select",
     "UpdateMixin",
 ]
