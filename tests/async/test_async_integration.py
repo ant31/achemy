@@ -229,6 +229,8 @@ async def test_integration_add_all(async_engine, unique_id): # Removed aclean_ta
         with pytest.raises(SQLAlchemyError):
             # Use the same session, commit=False to trigger flush error
             await ACountry.add_all(countries_violation, session_flush_error, commit=False)
+            # Manually flush to trigger the constraint violation
+            await session_flush_error.flush()
 
         # Verify the valid one wasn't added either due to rollback within the context manager
         # (Note: add_all itself doesn't explicitly rollback on flush error,
