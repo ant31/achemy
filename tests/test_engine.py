@@ -202,8 +202,8 @@ def test_get_session_creation_and_caching(engine_manager):
 async def test_dispose_engines(engine_manager):
     """Test that dispose_engines clears internal caches and calls dispose."""
     # Create a couple of engines and sessions
-    engine1, sm1 = engine_manager.session()
-    engine2, sm2 = engine_manager.session(database="otherdb")
+    _engine1, _sm1 = engine_manager.session()
+    _engine2, _sm2 = engine_manager.session(database="otherdb")
 
     assert len(engine_manager.engines) == 2
     assert len(engine_manager.sessions) == 2

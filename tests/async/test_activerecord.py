@@ -1,6 +1,7 @@
 """
 Tests for achemy/activerecord.py
 """
+import asyncio
 import json  # For dump_model test
 import logging  # Import logging
 import uuid  # Import uuid for tests
@@ -346,7 +347,6 @@ async def test_crud_add_save(unique_id):
         # Session is automatically closed/committed here by async with
 
     # Allow potential background tasks from session close to run
-    import asyncio
     await asyncio.sleep(0.01) # Use a slightly longer sleep after session close
 
     # Verify it's in the DB using another explicit session
