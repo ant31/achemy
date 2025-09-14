@@ -1,4 +1,4 @@
-from achemy.activerecord import ActiveRecord
+from achemy.activerecord import AlchemyModel
 from achemy.base import Base
 from achemy.config import PostgreSQLConfigSchema
 from achemy.engine import ActiveEngine
@@ -9,7 +9,7 @@ __version__ = "0.3.0"
 
 __all__ = [
     "ActiveEngine",
-    "ActiveRecord",
+    "AlchemyModel",
     "Base",
     "PKMixin",
     "PostgreSQLConfigSchema",

@@ -3,10 +3,10 @@ import uuid
 from sqlalchemy import Boolean, ForeignKey, Integer, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, MappedAsDataclass, mapped_column, relationship
 
-from achemy import ActiveRecord, PKMixin, UpdateMixin
+from achemy import AlchemyModel, PKMixin, UpdateMixin
 
 
-class ADemoBase(MappedAsDataclass, DeclarativeBase, ActiveRecord):
+class ADemoBase(MappedAsDataclass, DeclarativeBase, AlchemyModel):
     pass
 
 

@@ -4,11 +4,9 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Self
 
-from sqlalchemy import func
+from sqlalchemy import Select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, MappedAsDataclass, declared_attr, mapped_column
-
-from sqlalchemy import Select
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +14,8 @@ logger = logging.getLogger(__name__)
 class PKMixin(MappedAsDataclass):
     __abstract__ = True
     """
-    Primary key mixin combined with ActiveRecord functionality.
-    To be included in ActiveRecord subclasses only
+    Primary key mixin combined with AlchemyModel functionality.
+    To be included in AlchemyModel subclasses only
     """
 
     @declared_attr
@@ -33,15 +31,15 @@ class PKMixin(MappedAsDataclass):
     @classmethod
     async def find(cls, session: AsyncSession, pk_uuid: uuid.UUID) -> Self | None:
         """Return the instance with the given UUID primary key."""
-        # Uses the optimized session.get() method inherited via ActiveRecord.get
+        # Uses the optimized session.get() method inherited via AlchemyModel.get
         return await cls.get(session, pk_uuid)
 
 
 class UpdateMixin(MappedAsDataclass):
     __abstract__ = True
     """
-    Update/create timestamp tracking mixin combined with ActiveRecord functionality.
-    To be included in ActiveRecord subclasses only
+    Update/create timestamp tracking mixin combined with AlchemyModel functionality.
+    To be included in AlchemyModel subclasses only
     """
 
     @declared_attr

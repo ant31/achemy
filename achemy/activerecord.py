@@ -28,12 +28,12 @@ logger = logging.getLogger(__name__)
 
 # Generic type for the model class
 
-# --- ActiveRecord Core (Async) ---
+# --- AlchemyModel Core (Async) ---
 
 
-class ActiveRecord(AsyncAttrs):
+class AlchemyModel(AsyncAttrs):
     """
-    Async ActiveRecord-style base class using SQLAlchemy 2+ ORM.
+    Base model class with query helpers using SQLAlchemy 2+ ORM.
 
     Provides convenience methods for database operations (CRUD, queries)
     directly on the model class or instances.
@@ -64,7 +64,7 @@ class ActiveRecord(AsyncAttrs):
         """
         warnings.warn(
             (
-                "ActiveRecord.engine() is deprecated and will be removed in a future version. "
+                "AlchemyModel.engine() is deprecated and will be removed in a future version. "
                 "Manage the ActiveEngine instance directly in your application."
             ),
             DeprecationWarning,
@@ -85,7 +85,7 @@ class ActiveRecord(AsyncAttrs):
         """
         warnings.warn(
             (
-                "ActiveRecord.set_engine() is deprecated and will be removed in a future version. "
+                "AlchemyModel.set_engine() is deprecated and will be removed in a future version. "
                 "Instantiate ActiveEngine and get sessions from it directly."
             ),
             DeprecationWarning,
@@ -114,7 +114,7 @@ class ActiveRecord(AsyncAttrs):
         """
         warnings.warn(
             (
-                "ActiveRecord.session_factory() is deprecated and will be removed in a future version. "
+                "AlchemyModel.session_factory() is deprecated and will be removed in a future version. "
                 "Get a session factory directly from your ActiveEngine instance."
             ),
             DeprecationWarning,
@@ -143,7 +143,7 @@ class ActiveRecord(AsyncAttrs):
         """
         warnings.warn(
             (
-                "ActiveRecord.get_session() is deprecated and will be removed in a future version. "
+                "AlchemyModel.get_session() is deprecated and will be removed in a future version. "
                 "Get a session directly from a session factory obtained from your ActiveEngine instance."
             ),
             DeprecationWarning,
@@ -269,7 +269,7 @@ class ActiveRecord(AsyncAttrs):
                     logger.warning(f"Could not retrieve attribute '{key}' for {self}: {e}")
                     data[key] = None  # Or some other placeholder
         else:
-            # Fallback for non-mapped objects? Unlikely for ActiveRecord.
+            # Fallback for non-mapped objects? Unlikely for AlchemyModel.
             logger.warning(f"Instance {self} does not seem to be mapped by SQLAlchemy.")
             # Simple __dict__ might include SQLAlchemy state (_sa_...)
             # data = {k: v for k, v in self.__dict__.items() if not k.startswith('_sa_')}

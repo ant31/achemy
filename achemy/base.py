@@ -1,7 +1,7 @@
 from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass
 
-from .activerecord import ActiveRecord
+from .activerecord import AlchemyModel
 
 
-class Base(MappedAsDataclass, DeclarativeBase, ActiveRecord):
+class Base(MappedAsDataclass, DeclarativeBase, AlchemyModel):
     pass

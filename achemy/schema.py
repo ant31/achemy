@@ -5,20 +5,20 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.fields import FieldInfo
 
 if TYPE_CHECKING:
-    from .activerecord import ActiveRecord
+    from .activerecord import AlchemyModel
     from .base import Base
 
 logger = logging.getLogger(__name__)
 
 
-# Generic TypeVar for ActiveRecord subclasses used in Schema definition
+# Generic TypeVar for AlchemyModel subclasses used in Schema definition
 T = TypeVar("T", bound="Base")
 
 
-class Schema[T: "ActiveRecord"](BaseModel):
+class Schema[T: "AlchemyModel"](BaseModel):
     """
     Base schema class for serialization/deserialization using Pydantic.
-    Designed to work with ActiveRecord models.
+    Designed to work with AlchemyModel models.
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
@@ -28,13 +28,13 @@ class Schema[T: "ActiveRecord"](BaseModel):
 
     def to_model(self, modelcls: type[T]) -> T:
         """
-        Converts the Pydantic schema instance into an ActiveRecord model instance.
+        Converts the Pydantic schema instance into an AlchemyModel model instance.
 
         Args:
-            modelcls: The ActiveRecord class to instantiate.
+            modelcls: The AlchemyModel class to instantiate.
 
         Returns:
-            An instance of the ActiveRecord model populated with schema data.
+            An instance of the AlchemyModel model populated with schema data.
         """
         # Create an instance using the model's __init__
         # model_dump() provides the data suitable for ORM initialization
