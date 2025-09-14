@@ -683,7 +683,7 @@ async def test_bulk_insert_no_commit_and_explicit_session(unique_id):
     name2 = f"bulk_nocommit2_{unique_id}"
     objs_to_insert = [Model(name=name1), Model(name=name2)]
 
-    async with await Model.get_session() as s:
+    async with Model.get_session() as s:
         inserted_objs = await Model.bulk_insert(objs_to_insert, s, commit=False)
         assert inserted_objs is not None
         assert len(inserted_objs) == 2

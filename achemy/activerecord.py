@@ -328,7 +328,6 @@ class ActiveRecord(AsyncAttrs):
             else:
                 # Flush to get ID etc. if not committing
                 await session.flush([obj])
-                session.expire(obj)  # Expire to reflect potential DB defaults on next access
         except SQLAlchemyError as e:
             logger.error(f"Error adding {obj} with provided session {session}: {e}", exc_info=True)
             raise e
@@ -478,8 +477,6 @@ class ActiveRecord(AsyncAttrs):
                     logger.warning(f"Failed to refresh object {obj} after commit: {refresh_err}")
         else:
             await session.flush(objs)  # Flush if not committing
-            for obj in objs:
-                session.expire(obj)  # Expire after flush
         return objs
 
     @classmethod

@@ -15,7 +15,7 @@ from achemy.demo.amodels import ACity, ACountry, AResident
 async def test_integration_create_retrieve_update_delete(async_engine, unique_id): # Removed aclean_tables
     """Test the full CRUD cycle in an integration test"""
     # Note: Relies on unique_id for isolation instead of table cleaning.
-    async with await ACountry.get_session() as session:
+    async with ACountry.get_session() as session:
 
         user = AResident(name=f"intuser_{unique_id}", email=f"int_{unique_id}@example.com")
         await user.save(session, commit=True)
