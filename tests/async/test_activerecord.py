@@ -274,8 +274,8 @@ async def test_crud_add_save(unique_id):
     instance1_id = None # Initialize id
 
     # Use an explicit session for the save operation with async with
-    async with await SimpleModel.get_session() as save_session1:
-        instance1 = await instance_to_save.save(commit=True, session=save_session1)
+    async with SimpleModel.get_session() as save_session1:
+        instance1 = await instance_to_save.save(save_session1, commit=True)
         instance1_id = instance1.id # ID should be loaded after save commits
         # Session is automatically closed/committed here by async with
 
@@ -283,48 +283,48 @@ async def test_crud_add_save(unique_id):
     await asyncio.sleep(0.01) # Use a slightly longer sleep after session close
 
     # Verify it's in the DB using another explicit session
-    async with await SimpleModel.get_session() as verify_session1:
-        found1 = await SimpleModel.get(instance1_id, session=verify_session1)
+    async with SimpleModel.get_session() as verify_session1:
+        found1 = await SimpleModel.get(verify_session1, instance1_id)
         assert found1 is not None
         assert found1.name == instance1_name
 
     # 2. Add with commit=False
     instance2_name = f"crud_add2_{unique_id}"
     instance2 = SimpleModel(name=instance2_name)
-    async with await SimpleModel.get_session() as session_no_commit:
+    async with SimpleModel.get_session() as session_no_commit:
         # Use add directly with commit=False
-        added_instance2 = await SimpleModel.add(instance2, commit=False, session=session_no_commit)
+        added_instance2 = await SimpleModel.add(instance2, session_no_commit, commit=False)
         assert added_instance2 is instance2
         assert added_instance2.id is not None # ID should be assigned after flush
         instance2_id = added_instance2.id
 
         # Verify it's NOT YET in the DB via another explicit session
-        async with await SimpleModel.get_session() as verify_session2_before:
-            found2_before_commit = await SimpleModel.get(instance2_id, session=verify_session2_before)
+        async with SimpleModel.get_session() as verify_session2_before:
+            found2_before_commit = await SimpleModel.get(verify_session2_before, instance2_id)
             assert found2_before_commit is None
 
         # Commit the session
         await session_no_commit.commit()
 
     # Verify it IS NOW in the DB using another explicit session
-    async with await SimpleModel.get_session() as verify_session2_after:
-        found2_after_commit = await SimpleModel.get(instance2_id, session=verify_session2_after)
+    async with SimpleModel.get_session() as verify_session2_after:
+        found2_after_commit = await SimpleModel.get(verify_session2_after, instance2_id)
         assert found2_after_commit is not None
         assert found2_after_commit.name == instance2_name
 
     # 3. Add with provided session (commit=True)
     instance3_name = f"crud_add3_{unique_id}"
     instance3 = SimpleModel(name=instance3_name)
-    async with await SimpleModel.get_session() as provided_session:
-        added_instance3 = await SimpleModel.add(instance3, commit=True, session=provided_session)
+    async with SimpleModel.get_session() as provided_session:
+        added_instance3 = await SimpleModel.add(instance3, provided_session, commit=True)
         instance3_id = added_instance3.id
         # Verify within the same session (already committed)
-        found3_in_session = await SimpleModel.get(instance3_id, session=provided_session)
+        found3_in_session = await SimpleModel.get(provided_session, instance3_id)
         assert found3_in_session is not None
 
     # Verify in a new explicit session
-    async with await SimpleModel.get_session() as verify_session3_new:
-        found3_new_session = await SimpleModel.get(instance3_id, session=verify_session3_new)
+    async with SimpleModel.get_session() as verify_session3_new:
+        found3_new_session = await SimpleModel.get(verify_session3_new, instance3_id)
         assert found3_new_session is not None
 
 
@@ -698,17 +698,19 @@ async def test_bulk_insert_no_commit_and_explicit_session(unique_id):
         # This check is a bit more involved as they are not full objects yet.
         # For simplicity, we'll rely on the "not in DB" check above and "in DB after commit" below.
 
-        await s.commit() # Commit the explicit session
+        await s.commit()  # Commit the explicit session
 
     # Verify in DB now
-    db_obj1 = await Model.find_by(name=name1)
-    db_obj2 = await Model.find_by(name=name2)
-    assert db_obj1 is not None
-    assert db_obj2 is not None
+    async with Model.get_session() as s2:
+        db_obj1 = await Model.find_by(s2, name=name1)
+        db_obj2 = await Model.find_by(s2, name=name2)
+        assert db_obj1 is not None
+        assert db_obj2 is not None
 
-    # Cleanup
-    await Model.delete(db_obj1)
-    await Model.delete(db_obj2)
+        # Cleanup
+        await Model.delete(db_obj1, s2)
+        await Model.delete(db_obj2, s2)
+        await s2.commit()
 
 
 @pytest.mark.asyncio
