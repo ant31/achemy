@@ -326,8 +326,9 @@ class ActiveRecord(AsyncAttrs):
                 await session.commit()
                 await session.refresh(obj)
             else:
-                # Flush to get ID etc. if not committing
-                await session.flush([obj])
+                # Flush to get ID etc. if not committing.
+                # This is now the caller's responsibility when managing a session.
+                pass
         except SQLAlchemyError as e:
             logger.error(f"Error adding {obj} with provided session {session}: {e}", exc_info=True)
             raise e
@@ -476,7 +477,8 @@ class ActiveRecord(AsyncAttrs):
                 except Exception as refresh_err:
                     logger.warning(f"Failed to refresh object {obj} after commit: {refresh_err}")
         else:
-            await session.flush(objs)  # Flush if not committing
+            # Flushing is now the caller's responsibility when not committing.
+            pass
         return objs
 
     @classmethod
@@ -520,9 +522,7 @@ class ActiveRecord(AsyncAttrs):
         """
         obj_in_session = await self.__class__._ensure_obj_session(self, session)
         try:
-            logger.debug(
-                f"Refreshing attributes {attribute_names or 'all'} for {obj_in_session} in session {session}"
-            )
+            logger.debug(f"Refreshing attributes {attribute_names or 'all'} for {obj_in_session} in session {session}")
             await session.refresh(obj_in_session, attribute_names=attribute_names)
         except SQLAlchemyError as e:
             logger.error(f"Error refreshing instance {obj_in_session}: {e}", exc_info=True)

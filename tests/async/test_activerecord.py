@@ -295,7 +295,8 @@ async def test_crud_add_save(unique_id):
         # Use add directly with commit=False
         added_instance2 = await SimpleModel.add(instance2, session_no_commit, commit=False)
         assert added_instance2 is instance2
-        assert added_instance2.id is not None # ID should be assigned after flush
+        await session_no_commit.flush()  # Manually flush to populate the ID
+        assert added_instance2.id is not None  # ID should be assigned after flush
         instance2_id = added_instance2.id
 
         # Verify it's NOT YET in the DB via another explicit session
