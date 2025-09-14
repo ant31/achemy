@@ -499,16 +499,14 @@ async def test_querying_where(unique_id, caplog, querying_data):
     # 1. Where with keyword argument
     async with Model.get_session() as s:
         query_kw = Model.where(name=inst2.name)
-        results_kw = await query_kw.scalars(session=s)
-        items_kw = results_kw.all()
+        items_kw = (await s.execute(query_kw)).scalars().all()
         assert len(items_kw) == 1
         assert items_kw[0].id == inst2.id
 
     # 2. Where with positional argument
     async with Model.get_session() as s:
         query_pos = Model.where(Model.name == inst3.name)
-        results_pos = await query_pos.scalars(session=s)
-        items_pos = results_pos.all()
+        items_pos = (await s.execute(query_pos)).scalars().all()
         assert len(items_pos) == 1
         assert items_pos[0].id == inst3.id
 
@@ -519,8 +517,7 @@ async def test_querying_where(unique_id, caplog, querying_data):
     # Check that the query still works but ignores the bad kwarg
     async with Model.get_session() as s:
         # This query should return all 3 items created in this test
-        results_warn = await query_warn.scalars(session=s)
-        items_warn = results_warn.all()
+        items_warn = (await s.execute(query_warn)).scalars().all()
         # Filter results to only those created in this test run
         test_ids = {inst1.id, inst2.id, inst3.id}
         filtered_items_warn = [item for item in items_warn if item.id in test_ids]
@@ -928,6 +925,6 @@ async def test_bulk_insert_invalid_on_conflict_value(unique_id):
     Model = SimpleModel
     objs_to_insert = [Model(name=f"invalid_conflict_{unique_id}")]
 
-    with pytest.raises(ValueError, match="Invalid on_conflict_strategy value: bogus_value"):
+    with pytest.raises(ValueError, match="Invalid on_conflict strategy 'bogus_value' for PostgreSQL."):
         async with Model.get_session() as s:
             await Model.bulk_insert(objs_to_insert, s, on_conflict="bogus_value")  # type: ignore

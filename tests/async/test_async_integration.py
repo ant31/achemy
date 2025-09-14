@@ -56,8 +56,8 @@ async def test_integration_create_retrieve_update_delete(async_engine, unique_id
         assert c1_new.code == code
 
         # Pass session to scalars()
-        new_cities_result = await ACity.where(ACity.country_id == c1.id).scalars(session=session)
-        new_cities = new_cities_result.all()
+        new_cities_result = await session.execute(ACity.where(ACity.country_id == c1.id))
+        new_cities = new_cities_result.scalars().all()
         assert len(new_cities) == 3
         await ACountry.delete(c1_new, session)
         await session.commit()
@@ -65,8 +65,8 @@ async def test_integration_create_retrieve_update_delete(async_engine, unique_id
         assert c1_new is None
 
         # Pass session to scalars()
-        new_cities_result = await ACity.where(ACity.country_id == c1.id).scalars(session=session)
-        new_cities = new_cities_result.all()
+        new_cities_result = await session.execute(ACity.where(ACity.country_id == c1.id))
+        new_cities = new_cities_result.scalars().all()
         assert len(new_cities) == 0
 
 

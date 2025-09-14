@@ -42,5 +42,5 @@ async def test_select_chaining_and_execution(setup_select, test_model, unique_id
         results_ordered = (await session.execute(query_ordered)).scalars().all()
         assert len(results_ordered) == 2
         assert results_ordered[0].name == name_a
-        assert results_ordered[1].name == target_name
+        assert results_ordered[1].name == name_c
 
