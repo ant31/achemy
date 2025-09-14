@@ -232,46 +232,20 @@ async with User.get_session() as session:
 
 ## Pydantic Schemas & FastAPI Integration
 
-Achemy makes it trivial to use your database models in an API framework like FastAPI by automatically generating Pydantic schemas.
+Achemy models can be easily integrated with Pydantic, which is essential for building robust APIs with frameworks like FastAPI. For production applications that value type safety, **manually defining Pydantic schemas is the recommended best practice.**
 
-### Automatic Schema Generation
+### Full FastAPI Example (Recommended Approach)
 
-You can get a Pydantic schema class directly from your model, which is perfect for API responses.
-
-```python
-from models import User
-
-# Get the auto-generated Pydantic schema class
-UserSchema = User.pydantic_schema()
-
-# You can now use UserSchema like any other Pydantic model
-# For example, to inspect its JSON schema for OpenAPI documentation
-print(UserSchema.model_json_schema())
-
-> **Note on Static Type Checking**: Because Achemy generates Pydantic schema fields at runtime, static type checkers like Mypy cannot infer the attributes of the generated schema class (`UserSchema` in this example). If you use a strict type checker, you may need to use `# type: ignore` when accessing fields on instances of an auto-generated schema to avoid false-positive errors.
-```
-
-You can also convert a model instance directly to a Pydantic instance:
-
-```python
-user_instance = await User.find_by(name="Alice")
-if user_instance:
-    pydantic_user = user_instance.to_pydantic()
-    print(pydantic_user.model_dump())
-    # Output: {'id': UUID('...'), 'name': 'Alicia', 'email': '...', ...}
-```
-
-### Full FastAPI Example
-
-Here’s how to build a simple User API. For API *input*, it's best practice to define a specific Pydantic model with only the fields a client should provide. For API *output*, we can use the automatically generated schema.
+Here’s how to build a simple User API. For API *input* and *output*, we will define explicit Pydantic models. This ensures your API contract is clear, validated, and fully supported by static type checkers like Mypy.
 
 ```python
 # api.py
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 from achemy import ActiveEngine, ActiveRecord
 from config import db_config  # Assuming you have a config.py
@@ -302,8 +276,17 @@ class UserIn(BaseModel):
     email: EmailStr
 
 
-# 2. Use the auto-generated schema for responses (API output)
-UserOut = User.pydantic_schema()
+# 2. Define a schema for user data in responses (API output)
+# This provides full type safety and editor autocompletion.
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    email: EmailStr
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
 
 
 # --- API Endpoints ---
@@ -336,10 +319,30 @@ async def get_user(user_id: uuid.UUID):
         if not user:
             raise HTTPException(status_code=404, detail="User not found.")
 
-        # The User model instance is serialized by FastAPI
+        # The User model instance is automatically serialized by FastAPI
         # into our Pydantic `UserOut` schema for the response.
         return user
 ```
+
+### Automatic Schema Generation (For Prototyping)
+
+Achemy provides a convenience method, `Model.pydantic_schema()`, to generate a Pydantic schema from a model at runtime. This can be useful for quick prototyping or internal tools where strict type safety is not a primary concern.
+
+```python
+from models import User
+
+# Get the auto-generated Pydantic schema class
+UserSchema = User.pydantic_schema()
+
+# Convert a model instance directly to a Pydantic instance
+async with User.get_session() as session:
+    user_instance = await User.find_by(session, name="Alice")
+    if user_instance:
+        pydantic_user = user_instance.to_pydantic()
+        print(pydantic_user.model_dump())
+```
+
+> **Warning**: Because these schemas are created dynamically, static type checkers (like Mypy) and IDEs cannot infer their fields. This will lead to type errors and a lack of autocompletion. For any production-facing code, the recommended approach is to define schemas manually as shown in the FastAPI example above.
 To run this example, you would need `fastapi` and `uvicorn`:
 ```bash
 pip install fastapi "uvicorn[standard]"

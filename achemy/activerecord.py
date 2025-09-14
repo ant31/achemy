@@ -784,7 +784,14 @@ class ActiveRecord(AsyncAttrs):
 
     @classmethod
     def pydantic_schema(cls) -> type[Schema]:
-        """Return the Pydantic schema for this model."""
+        """
+        Return the Pydantic schema for this model.
+
+        Note:
+            This method generates a Pydantic model at runtime, which cannot be
+            understood by static type checkers like Mypy. For type-safe applications,
+            it is strongly recommended to define Pydantic schemas manually.
+        """
         if not cls.__pydantic_initialized__:
             cls.__pydantic_schema__ = Schema[cls]
             # Initialize the Pydantic schema if not already done
@@ -793,4 +800,13 @@ class ActiveRecord(AsyncAttrs):
         return cls.__pydantic_schema__
 
     def to_pydantic(self) -> Schema:
+        """
+        Converts the model instance to its dynamically generated Pydantic schema instance.
+
+        Note:
+            This method uses a Pydantic model generated at runtime, which cannot be
+            understood by static type checkers like Mypy. For type-safe applications,
+            it is strongly recommended to define Pydantic schemas manually and use
+            `YourSchema.model_validate(self)` for conversion.
+        """
         return self.pydantic_schema()(**self.to_dict())
