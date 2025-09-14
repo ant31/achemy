@@ -17,7 +17,6 @@ from sqlalchemy.orm import (
     ColumnProperty,
     Mapper,
 )
-from typing_extensions import deprecated
 
 # Assuming ActiveEngine is imported from the refactored engine file
 from achemy.engine import ActiveEngine
