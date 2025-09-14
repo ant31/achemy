@@ -96,38 +96,19 @@ class ActiveRecord(AsyncAttrs):
         return cls._session_factory
 
     @classmethod
-    @deprecated("use get_session() instead.")
-    async def new_session(cls, session: AsyncSession | None = None) -> AsyncSession:
+    def get_session(cls) -> AsyncSession:
         """
-        Deprecated: Use get_session() instead.
-        Creates a new session or returns an existing one.
-        """
-        logger.warning("new_session() is deprecated. Use get_session() instead.")
-        return await cls.get_session(session=session)
+        Gets a new AsyncSession instance from the class's session factory.
 
-    @classmethod
-    async def get_session(cls, session: AsyncSession | None = None) -> AsyncSession:
-        """
-        Gets an AsyncSession instance.
-
-        If an existing session is provided, it's returned directly.
-        Otherwise, a new session is created using the class's session factory.
-
-        Args:
-            session: An optional existing AsyncSession.
+        This session should be used in a context manager (`async with`) to ensure
+        proper transaction handling and resource cleanup.
 
         Returns:
-            An active AsyncSession.
+            A new AsyncSession instance.
 
         Raises:
             ValueError: If the session factory is not configured.
         """
-        if session is not None:
-            # If a session is passed, ensure it's active (or handle appropriately)
-            # For now, we just return it, assuming it's managed externally if passed.
-            logger.debug(f"Using provided session for {cls.__name__}: {session}")
-            return session
-
         # Create a new session from the factory
         factory = cls.session_factory()  # Raises ValueError if not configured
         new_session = factory()
@@ -139,36 +120,25 @@ class ActiveRecord(AsyncAttrs):
         return async_object_session(self)
 
     @classmethod
-    async def _ensure_obj_session(cls, obj: Self, session: AsyncSession | None = None) -> tuple[AsyncSession, Self]:
+    async def _ensure_obj_session(cls, obj: Self, session: AsyncSession) -> Self:
         """
-        Internal helper to ensure an object is associated with a session.
+        Internal helper to ensure an object is associated with a given session.
 
-        Gets a session if not provided, merges the object into the session
-        if it's not already persistent or detached within that session.
+        Merges the object into the session if it's not already persistent
+        or part of that session's identity map.
 
         Args:
             obj: The model instance.
-            session: An optional existing session.
+            session: The session to associate the object with.
 
         Returns:
-            A tuple containing the session and the (potentially merged) object.
+            The (potentially merged) object instance.
         """
-        if session is None:
-            session = obj.obj_session()  # Check if already associated
-
-        if session is None:
-            # If still no session, get a default one
-            session = await cls.get_session()
-            logger.debug(f"Got default session {session} for object {obj}")
-            # Merge the object into the new session to attach it
-            logger.debug(f"Merging object {obj} into session {session}")
-            obj = await session.merge(obj)
-        elif obj not in session:
+        if obj not in session:
             # If session provided, but object not in it, merge it.
             logger.debug(f"Object {obj} not in provided session {session}, merging.")
-            obj = await session.merge(obj)
-
-        return session, obj
+            return await session.merge(obj)
+        return obj
 
     # --- Instance Representation & Data Handling (Merged from BaseActiveRecord) ---
     def __str__(self):
@@ -338,48 +308,42 @@ class ActiveRecord(AsyncAttrs):
     # --- Basic CRUD Operations ---
 
     @classmethod
-    async def add(cls, obj: Self, commit: bool = False, session: AsyncSession | None = None) -> Self:
-        """Add this instance to the database."""
-        if session:
-            # Use provided session directly
-            s = session
-            try:
-                s.add(obj)
-                if commit:
-                    await s.commit()
-                    await s.refresh(obj)
-                # No close/rollback needed for externally managed session
-            except SQLAlchemyError as e:
-                # Let caller handle rollback if session is external
-                logger.error(f"Error adding {obj} with provided session {s}: {e}", exc_info=True)
-                raise e
-        else:
-            # Manage session internally
-            async with await cls.get_session() as s:
-                try:
-                    s.add(obj)
-                    if commit:
-                        await s.commit()
-                        await s.refresh(obj)
-                    else:
-                        # Flush to get ID etc. if not committing
-                        await s.flush([obj])
-                        s.expire(obj)  # Expire to reflect potential DB defaults on next access
-                except SQLAlchemyError as e:
-                    # Rollback is handled by async with context manager on error
-                    logger.error(f"Error adding {obj} with internal session {s}: {e}", exc_info=True)
-                    raise e
+    async def add(cls, obj: Self, session: AsyncSession, commit: bool = False) -> Self:
+        """
+        Add an instance to the session and optionally commit.
+
+        Args:
+            obj: The model instance to add.
+            session: The active AsyncSession.
+            commit: If True, commit the transaction. It is recommended to manage
+                    commits at the session level instead.
+
+        Returns:
+            The added instance.
+        """
+        try:
+            session.add(obj)
+            if commit:
+                await session.commit()
+                await session.refresh(obj)
+            else:
+                # Flush to get ID etc. if not committing
+                await session.flush([obj])
+                session.expire(obj)  # Expire to reflect potential DB defaults on next access
+        except SQLAlchemyError as e:
+            logger.error(f"Error adding {obj} with provided session {session}: {e}", exc_info=True)
+            raise e
         return obj
 
-    async def save(self, commit: bool = False, session: AsyncSession | None = None) -> Self:
-        """Add this instance to the database."""
-        return await self.add(self, commit, session)
+    async def save(self, session: AsyncSession, commit: bool = False) -> Self:
+        """Add this instance to the database via the provided session."""
+        return await self.add(self, session, commit)
 
     @classmethod
     async def bulk_insert(
         cls: type[Self],
         objs: list[Self],
-        session: AsyncSession | None = None,
+        session: AsyncSession,
         commit: bool = True,
         on_conflict: Literal["fail", "nothing"] = "fail",
         on_conflict_index_elements: list[str] | None = None,
@@ -433,15 +397,8 @@ class ActiveRecord(AsyncAttrs):
         if returning:
             insert_stmt = insert_stmt.returning(cls)
 
-        s = await cls.get_session(session)
-        result = None
         try:
-            if session is None:  # Internal session, use context manager
-                async with s:
-                    result = await cls._execute_and_commit_bulk_statement(s, insert_stmt, commit)
-            else:  # External session, manage directly
-                result = await cls._execute_and_commit_bulk_statement(s, insert_stmt, commit)
-
+            result = await cls._execute_and_commit_bulk_statement(session, insert_stmt, commit)
             res = result.scalars().all() if returning and result else None
             return res
         except SQLAlchemyError as e:
@@ -481,12 +438,7 @@ class ActiveRecord(AsyncAttrs):
         return result
 
     @classmethod
-    async def add_all(
-        cls,
-        objs: list[Self],
-        commit: bool = True,
-        session: AsyncSession | None = None,
-    ) -> Sequence[Self]:
+    async def add_all(cls, objs: list[Self], session: AsyncSession, commit: bool = True) -> Sequence[Self]:
         """
         Adds multiple instances to the session and optionally commits.
 
@@ -504,22 +456,12 @@ class ActiveRecord(AsyncAttrs):
         if not objs:
             return []
 
-        s = await cls.get_session(session)
         try:
-            # If session was provided, execute directly
-            if session:
-                return await cls._add_all_to_session(objs, s, commit)
-            # Otherwise, use the session within its context manager
-            else:
-                async with s:  # type: ignore # s is AsyncSession when session is None
-                    return await cls._add_all_to_session(objs, s, commit)
+            return await cls._add_all_to_session(objs, session, commit)
         except SQLAlchemyError as e:
-            # Log the error originating from _add_all_to_session or session management
             logger.error(f"Error during add_all operation for {cls.__name__}: {e}", exc_info=True)
-            # Rollback is handled by the context manager if session was internal,
-            # or needs to be handled by the caller if session was provided.
+            # Rollback needs to be handled by the caller.
             raise e
-        # The return is handled within the try block
 
     @classmethod
     async def _add_all_to_session(cls, objs: list[Self], session: AsyncSession, commit: bool) -> Sequence[Self]:
@@ -542,117 +484,100 @@ class ActiveRecord(AsyncAttrs):
         return objs
 
     @classmethod
-    async def delete(cls, obj: Self, commit: bool = True, session: AsyncSession | None = None) -> None:
+    async def delete(cls, obj: Self, session: AsyncSession, commit: bool = True) -> None:
         """
-        Deletes the instance from the database.
+        Deletes the instance from the database using the provided session.
 
         Args:
             obj: The instance to delete.
-            commit: If True, commit the session after deletion.
-            session: Optional session to use.
+            session: The active AsyncSession.
+            commit: If True, commit the transaction. It is recommended to manage
+                    commits at the session level instead.
 
         Raises:
             SQLAlchemyError: If database commit fails.
         """
-        if session:
-            # Use provided session
-            s, obj_in_session = await cls._ensure_obj_session(obj, session)  # Ensure obj is in this session
-            try:
-                logger.debug(f"Deleting instance {obj_in_session} from provided session {s}")
-                await s.delete(obj_in_session)
-                if commit:
-                    await s.commit()
-                else:
-                    await s.flush([obj_in_session])  # Flush if not committing
-            except SQLAlchemyError as e:
-                logger.error(f"Error deleting {obj_in_session} with provided session {s}: {e}", exc_info=True)
-                # Let caller handle rollback
-                raise e
-        else:
-            # Manage session internally
-            async with await cls.get_session() as s:
-                # Ensure object is attached to *this* internal session before delete
-                obj_in_session = await s.merge(obj)  # Merge ensures it's attached
-                try:
-                    logger.debug(f"Deleting instance {obj_in_session} from internal session {s}")
-                    await s.delete(obj_in_session)
-                    if commit:
-                        await s.commit()
-                    else:
-                        await s.flush([obj_in_session])  # Flush if not committing
-                except SQLAlchemyError as e:
-                    logger.error(f"Error deleting {obj_in_session} with internal session {s}: {e}", exc_info=True)
-                    # Rollback handled by async with
-                    raise e
+        try:
+            obj_in_session = await cls._ensure_obj_session(obj, session)
+            logger.debug(f"Deleting instance {obj_in_session} from session {session}")
+            await session.delete(obj_in_session)
+            if commit:
+                await session.commit()
+            else:
+                await session.flush([obj_in_session])  # Flush if not committing
+        except SQLAlchemyError as e:
+            logger.error(f"Error deleting {obj} with session {session}: {e}", exc_info=True)
+            raise e
 
     # --- Instance State Management ---
 
-    async def refresh(self, attribute_names: Sequence[str] | None = None, session: AsyncSession | None = None) -> Self:
+    async def refresh(self, session: AsyncSession, attribute_names: Sequence[str] | None = None) -> Self:
         """
         Refreshes the instance's attributes from the database.
 
         Args:
+            session: The active AsyncSession.
             attribute_names: Optional sequence of specific attribute names to refresh.
-            session: Optional session to use.
 
         Returns:
             The refreshed instance itself.
         """
-        s, obj_in_session = await self.__class__._ensure_obj_session(self, session)
+        obj_in_session = await self.__class__._ensure_obj_session(self, session)
         try:
-            logger.debug(f"Refreshing attributes {attribute_names or 'all'} for {obj_in_session} in session {s}")
-            await s.refresh(obj_in_session, attribute_names=attribute_names)
+            logger.debug(
+                f"Refreshing attributes {attribute_names or 'all'} for {obj_in_session} in session {session}"
+            )
+            await session.refresh(obj_in_session, attribute_names=attribute_names)
         except SQLAlchemyError as e:
             logger.error(f"Error refreshing instance {obj_in_session}: {e}", exc_info=True)
-            # No rollback needed for refresh usually, but re-raise the error
             raise e
         return obj_in_session
 
-    async def expire(self, attribute_names: Sequence[str] | None = None, session: AsyncSession | None = None) -> Self:
+    async def expire(self, session: AsyncSession, attribute_names: Sequence[str] | None = None) -> Self:
         """
         Expires the instance's attributes, causing them to be reloaded on next access.
 
         Args:
+            session: The active AsyncSession.
             attribute_names: Optional sequence of specific attribute names to expire.
-            session: Optional session to use.
 
         Returns:
             The instance itself.
         """
-        s, obj_in_session = await self.__class__._ensure_obj_session(self, session)
-        logger.debug(f"Expiring attributes {attribute_names or 'all'} for {obj_in_session} in session {s}")
-        s.expire(obj_in_session, attribute_names=attribute_names)
+        obj_in_session = await self.__class__._ensure_obj_session(self, session)
+        logger.debug(f"Expiring attributes {attribute_names or 'all'} for {obj_in_session} in session {session}")
+        session.expire(obj_in_session, attribute_names=attribute_names)
         return obj_in_session
 
-    async def expunge(self, session: AsyncSession | None = None) -> Self:
+    async def expunge(self, session: AsyncSession) -> Self:
         """
         Removes the instance from the session. The object becomes detached.
 
         Args:
-            session: Optional session to use.
+            session: The active AsyncSession.
 
         Returns:
             The (now detached) instance itself.
         """
-        s, obj_in_session = await self.__class__._ensure_obj_session(self, session)
-        logger.debug(f"Expunging instance {obj_in_session} from session {s}")
-        s.expunge(obj_in_session)
+        obj_in_session = await self.__class__._ensure_obj_session(self, session)
+        logger.debug(f"Expunging instance {obj_in_session} from session {session}")
+        session.expunge(obj_in_session)
         return obj_in_session
 
-    async def is_modified(self, session: AsyncSession | None = None) -> bool:
+    async def is_modified(self, session: AsyncSession) -> bool:
         """
         Checks if the instance has pending changes in the session.
 
         Args:
-            session: Optional session to use.
+            session: The active AsyncSession.
 
         Returns:
             True if the object is considered modified within the session, False otherwise.
         """
-        s, obj_in_session = await self.__class__._ensure_obj_session(self, session)
+        obj_in_session = await self.__class__._ensure_obj_session(self, session)
         # The session tracks modifications. Check the 'dirty' collection.
-        is_dirty = obj_in_session in s.dirty
-        logger.debug(f"Instance {obj_in_session} modified status in session {s}: {is_dirty}")
+        is_dirty = obj_in_session in session.dirty
+        logger.debug(f"Instance {obj_in_session} modified status in session {session}: {is_dirty}")
         return is_dirty
 
     # --- Session Commit/Rollback (Class-level convenience) ---
@@ -749,53 +674,46 @@ class ActiveRecord(AsyncAttrs):
 
     @classmethod
     async def all(
-        cls, query: Select[Self] | None = None, limit: int | None = None, session: AsyncSession | None = None
+        cls, session: AsyncSession, query: Select[Self] | None = None, limit: int | None = None
     ) -> Sequence[Self]:
         """
         Returns all instances matching the query.
 
         Args:
+            session: The active AsyncSession to execute with.
             query: An optional Select query object. If None, selects all.
             limit: Optional limit on the number of results.
-            session: Optional session to execute with.
 
         Returns:
             A sequence of model instances.
         """
-        q = query if query is not None else cls.select()  # No session here
+        q = query if query is not None else cls.select()
         if limit is not None:
             q = q.limit(limit)
 
         logger.debug(f"Fetching all results for query on {cls.__name__} (limit: {limit})")
-        # Manage session context if none provided
-        if session:
-            result = await cls._execute_query(q, session)
-            return result.all()
-        else:
-            async with await cls.get_session() as s:
-                result = await cls._execute_query(q, s)
-                # Eagerly load results before session closes
-                return result.all()
+        result = await cls._execute_query(q, session)
+        return result.all()
 
     @classmethod
     async def first(
         cls,
+        session: AsyncSession,
         query: Select[Self] | None = None,
         order_by: Any = None,  # ColumnElement or similar
-        session: AsyncSession | None = None,
     ) -> Self | None:
         """
         Returns the first instance matching the query, optionally ordered.
 
         Args:
+            session: The active AsyncSession to execute with.
             query: An optional Select query object. If None, selects all.
             order_by: Optional column or ordering expression. Defaults to PK ascending.
-            session: Optional session to execute with.
 
         Returns:
             The first matching model instance or None.
         """
-        q = query if query is not None else cls.select()  # No session here
+        q = query if query is not None else cls.select()
 
         if order_by is None:
             # Default order by primary key ascending if possible
@@ -811,107 +729,73 @@ class ActiveRecord(AsyncAttrs):
 
         q = q.limit(1)
         logger.debug(f"Fetching first result for query on {cls.__name__}")
-        # Manage session context if none provided
-        if session:
-            result = await cls._execute_query(q, session)
-            return result.first()
-        else:
-            async with await cls.get_session() as s:
-                result = await cls._execute_query(q, s)
-                # Eagerly load result before session closes
-                return result.first()
+        result = await cls._execute_query(q, session)
+        return result.first()
 
     @classmethod
-    async def find_by(cls, *args, session: AsyncSession | None = None, **kwargs) -> Self | None:
+    async def find_by(cls, session: AsyncSession, *args, **kwargs) -> Self | None:
         """
         Returns the first instance matching the given criteria.
 
         Combines `where()` and `first()`.
 
         Args:
+            session: The active AsyncSession to execute with.
             *args: Positional WHERE clause elements.
-            session: Optional session to execute with.
             **kwargs: Keyword arguments for equality filters.
 
         Returns:
             The first matching model instance or None.
         """
         logger.debug(f"Finding first {cls.__name__} by criteria: args={args}, kwargs={kwargs}")
-        query = cls.where(*args, **kwargs)  # No session here
-        # Pass the session explicitly to first if provided here
-        # first() will handle context if session is None
-        return await cls.first(query=query, session=session)  # Default ordering by PK
+        query = cls.where(*args, **kwargs)
+        return await cls.first(session=session, query=query)  # Default ordering by PK
 
     @classmethod
-    async def get(cls, pk: Any, session: AsyncSession | None = None) -> Self | None:
+    async def get(cls, session: AsyncSession, pk: Any) -> Self | None:
         """
-        Returns an instance by its primary key.
+        Returns an instance by its primary key using the provided session.
 
         Args:
+            session: The active AsyncSession.
             pk: The primary key value.
-            session: Optional session to execute with.
 
         Returns:
             The model instance or None if not found.
         """
-        # Manage session context if none provided
-        if session:
-            logger.debug(f"Getting {cls.__name__} by PK: {pk} using provided session {session}")
-            try:
-                return await session.get(cls, pk)
-            except SQLAlchemyError as e:
-                logger.error(f"Error getting {cls.__name__} by PK {pk} with provided session: {e}", exc_info=True)
-                raise e
-        else:
-            async with await cls.get_session() as s:
-                logger.debug(f"Getting {cls.__name__} by PK: {pk} using new session {s}")
-                try:
-                    # Use the context-managed session s
-                    return await s.get(cls, pk)
-                except SQLAlchemyError as e:
-                    logger.error(f"Error getting {cls.__name__} by PK {pk} with new session: {e}", exc_info=True)
-                    raise e  # Re-raise after logging
+        logger.debug(f"Getting {cls.__name__} by PK: {pk} using session {session}")
+        try:
+            return await session.get(cls, pk)
+        except SQLAlchemyError as e:
+            logger.error(f"Error getting {cls.__name__} by PK {pk} with session {session}: {e}", exc_info=True)
+            raise e
 
     @classmethod
-    async def count(cls, query: Select[Self] | None = None, session: AsyncSession | None = None) -> int:
+    async def count(cls, session: AsyncSession, query: Select[Self] | None = None) -> int:
         """
         Returns the count of instances matching the query.
 
         Args:
+            session: The active AsyncSession.
             query: An optional Select query object. If None, counts all.
-            session: Optional session to execute with.
 
         Returns:
             The total number of matching rows.
         """
-        q = query if query is not None else cls.select()  # No session here
+        q = query if query is not None else cls.select()
 
         # Construct a count query based on the original query's WHERE clause etc.
         # Reset limit/offset/order_by for count
         count_q = sa.select(func.count()).select_from(q.order_by(None).limit(None).offset(None).subquery())
 
-        # Manage session context if none provided
-        if session:
-            logger.debug(f"Executing count query for {cls.__name__} with provided session {session}: {count_q}")
-            try:
-                result = await session.execute(count_q)
-                count_scalar = result.scalar_one_or_none()
-                return count_scalar if count_scalar is not None else 0
-            except SQLAlchemyError as e:
-                logger.error(
-                    f"Error executing count query for {cls.__name__} with provided session: {e}", exc_info=True
-                )
-                raise e
-        else:
-            async with await cls.get_session() as s:
-                logger.debug(f"Executing count query for {cls.__name__} with new session {s}: {count_q}")
-                try:
-                    result = await s.execute(count_q)
-                    count_scalar = result.scalar_one_or_none()
-                    return count_scalar if count_scalar is not None else 0
-                except SQLAlchemyError as e:
-                    logger.error(f"Error executing count query for {cls.__name__} with new session: {e}", exc_info=True)
-                    raise e
+        logger.debug(f"Executing count query for {cls.__name__} with session {session}: {count_q}")
+        try:
+            result = await session.execute(count_q)
+            count_scalar = result.scalar_one_or_none()
+            return count_scalar if count_scalar is not None else 0
+        except SQLAlchemyError as e:
+            logger.error(f"Error executing count query for {cls.__name__} with session {session}: {e}", exc_info=True)
+            raise e
 
     @classmethod
     def pydantic_schema(cls) -> type[Schema]:

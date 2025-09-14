@@ -6,7 +6,7 @@ Achemy is an asynchronous Python library that simplifies database interactions b
 
 -   **Active Record Pattern**: Intuitive, model-centric methods for database operations (`User.all()`, `user.save()`).
 -   **Async First**: Built for modern asynchronous applications with `async/await`.
--   **Automatic Session Management**: Achemy handles session creation and cleanup, reducing boilerplate code.
+-   **Explicit Session Management**: Achemy enforces safe, explicit session and transaction handling, preventing common performance and data integrity pitfalls.
 -   **Pydantic Integration**: Automatically generate Pydantic schemas from your SQLAlchemy models for API validation and serialization.
 -   **Bulk Operations**: Efficiently insert large numbers of records with support for conflict resolution.
 -   **Helpful Mixins**: Common patterns like UUID primary keys and timestamp tracking are available as simple mixins.
@@ -89,9 +89,10 @@ ActiveRecord.set_engine(engine)
 async def main():
     # Your application logic here
     # Example: create a user
-    async with await User.get_session() as session:
+    async with User.get_session() as session:
         new_user = User(name="Alice", email="alice@example.com")
-        await new_user.save(commit=True, session=session)
+        await new_user.save(session=session)
+        await session.commit()
         print(f"Created user: {new_user}")
 
 
@@ -103,55 +104,58 @@ if __name__ == "__main__":
 
 ### Creating and Saving Records
 
-All database operations should be performed within an explicit session context. This ensures proper transaction management and connection handling.
+All database operations must be performed within an explicit session context using `async with Model.get_session() as session:`. This ensures proper transaction management and connection handling. Commits must be handled on the session object.
 
 ```python
-async with await User.get_session() as session:
-    # Method 1: Create an instance and save it.
-    # `commit=True` will commit the transaction automatically within this operation.
+async with User.get_session() as session:
+    # Create an instance and save it.
     user = User(name="Alice", email="alice@example.com")
-    await user.save(commit=True, session=session)
+    await user.save(session=session)
 
-    # Method 2: Use the class method 'add'.
+    # Use the class method 'add'.
     user_bob = User(name="Bob", email="bob@example.com")
-    await User.add(user_bob, commit=True, session=session)
+    await User.add(user_bob, session=session)
 
     # Add multiple records at once
     users_to_add = [User(name="Charlie", email="charlie@example.com"), User(name="Diana", email="diana@example.com")]
-    await User.add_all(users_to_add, commit=True, session=session)
+    await User.add_all(users_to_add, session=session)
+
+    # The changes are only flushed to the DB at this point.
+    # To persist them, commit the session:
+    await session.commit()
 ```
-If `commit=False`, the object is added to the session and flushed (to get its ID), but requires an explicit `await session.commit()` call later to persist the transaction. See the section on Transactions for more details.
+The session context manager automatically handles rollback on exceptions. See the section on Transactions for more details.
 
 ### Querying Records
 
 ```python
-async with await User.get_session() as session:
+async with User.get_session() as session:
     # Get all users (use with caution on large tables)
-    all_users = await User.all(session=session)
+    all_users = await User.all(session)
 
     # Get a user by primary key (highly optimized)
-    user_by_pk = await User.get(some_uuid, session=session)
+    user_by_pk = await User.get(session, some_uuid)
 
     # Find a user by primary key using the PKMixin helper 'find'
     # (This is equivalent to User.get(pk))
-    user_by_find = await User.find(some_uuid, session=session)
+    user_by_find = await User.find(session, some_uuid)
 
     # Find the first user matching specific criteria
-    user_by_email = await User.find_by(email="alice@example.com", session=session)
+    user_by_email = await User.find_by(session, email="alice@example.com")
 
     # Find all users matching criteria
-    active_users = await User.all(query=User.where(User.is_active==True), session=session)
+    active_users = await User.all(session, query=User.where(User.is_active==True))
 
     # Get a count of records
-    active_user_count = await User.count(query=User.where(User.is_active==True), session=session)
-    total_user_count = await User.count(session=session)
+    active_user_count = await User.count(session, query=User.where(User.is_active==True))
+    total_user_count = await User.count(session)
 
     # Get the first record, ordered by a specific column
-    first_user_by_name = await User.first(order_by=User.name.asc(), session=session)
+    first_user_by_name = await User.first(session, order_by=User.name.asc())
 
     # Get the most recently created/modified record (requires UpdateMixin)
-    latest_user = await User.last_created(session=session)
-    last_updated_user = await User.last_modified(session=session)
+    latest_user = await User.last_created(session)
+    last_updated_user = await User.last_modified(session)
 ```
 
 ### Advanced Querying with `select()`
@@ -167,27 +171,29 @@ query = (
 )
 
 # Execute the query within a session
-async with await User.get_session() as session:
-    selected_users = await User.all(query=query, session=session)
+async with User.get_session() as session:
+    selected_users = await User.all(session, query=query)
 ```
 
 ### Updating Records
 
 ```python
-async with await User.get_session() as session:
-    user = await User.find_by(name="Alice", session=session)
+async with User.get_session() as session:
+    user = await User.find_by(session, name="Alice")
     if user:
         user.name = "Alicia"
-        await user.save(commit=True, session=session)
+        await user.save(session=session)
+        await session.commit()
 ```
 
 ### Deleting Records
 
 ```python
-async with await User.get_session() as session:
-    user = await User.find_by(name="Bob", session=session)
+async with User.get_session() as session:
+    user = await User.find_by(session, name="Bob")
     if user:
-        await User.delete(user, commit=True, session=session)
+        await User.delete(user, session=session)
+        await session.commit()
 ```
 
 ## Bulk Operations
@@ -197,7 +203,7 @@ For high-performance inserts, use `bulk_insert`.
 ```python
 from sqlalchemy.exc import IntegrityError
 
-async with await User.get_session() as session:
+async with User.get_session() as session:
     users_to_bulk_insert = [
         User(name="Eve", email="eve@example.com"),
         User(name="Frank", email="frank@example.com"),
@@ -205,7 +211,8 @@ async with await User.get_session() as session:
 
     # This will raise an error if a user with the same email already exists
     try:
-        await User.bulk_insert(users_to_bulk_insert, session=session)
+        await User.bulk_insert(users_to_bulk_insert, session)
+        await session.commit()
     except IntegrityError:
         print("A user with that email already exists.")
         # The session context manager automatically rolls back on exception.
@@ -217,8 +224,9 @@ async with await User.get_session() as session:
     ]
     # 'on_conflict_index_elements' targets the unique constraint on the 'email' column
     inserted = await User.bulk_insert(
-        conflicting_users, on_conflict="nothing", on_conflict_index_elements=["email"], session=session
+        conflicting_users, session, on_conflict="nothing", on_conflict_index_elements=["email"]
     )
+    await session.commit()
     # `inserted` will only contain Grace, as Alice was skipped.
 ```
 
@@ -300,9 +308,9 @@ UserOut = User.pydantic_schema()
 @app.post("/users/", response_model=UserOut, status_code=201)
 async def create_user(user_in: UserIn):
     """Create a new user."""
-    async with await User.get_session() as session:
+    async with User.get_session() as session:
         # Check if user already exists
-        existing_user = await User.find_by(email=user_in.email, session=session)
+        existing_user = await User.find_by(session, email=user_in.email)
         if existing_user:
             raise HTTPException(status_code=400, detail="Email already registered.")
 
@@ -310,9 +318,10 @@ async def create_user(user_in: UserIn):
         user_model = User(**user_in.model_dump())
 
         # Save the model to the database
-        await user_model.save(commit=True, session=session)
+        await user_model.save(session=session)
+        await session.commit()
 
-        # The session context manager handles commit/rollback.
+        # The session context manager handles rollback on exceptions.
         # The user_model is now persisted and can be returned.
         return user_model
 
@@ -320,8 +329,8 @@ async def create_user(user_in: UserIn):
 @app.get("/users/{user_id}", response_model=UserOut)
 async def get_user(user_id: uuid.UUID):
     """Retrieve a user by their ID."""
-    async with await User.get_session() as session:
-        user = await User.find(user_id, session=session)  # PKMixin provides .find()
+    async with User.get_session() as session:
+        user = await User.find(session, user_id)  # PKMixin provides .find()
         if not user:
             raise HTTPException(status_code=404, detail="User not found.")
 
@@ -340,8 +349,8 @@ uvicorn api:app --reload
 Achemy models provide helper methods for data conversion:
 
 ```python
-async with await User.get_session() as session:
-    user = await User.find_by(name="Alicia", session=session)
+async with User.get_session() as session:
+    user = await User.find_by(session, name="Alicia")
 
 if user:
     # Convert model to a dictionary (mapped columns only)
@@ -358,25 +367,25 @@ new_user_instance = User.load(new_user_data)
 # new_user_instance is now a transient User object
 ```
 
-## Transactions and Explicit Session Management
+## Transactions and Session Management
 
-For any series of operations that should succeed or fail together (a transaction), you must use an explicit session context. This is the recommended approach for all application-level code (e.g., in a web request) to ensure data integrity and proper connection management.
+Achemy requires explicit session management for all database operations. This ensures that every action is part of a well-defined transaction, providing data integrity and optimal performance.
 
-Use `Model.get_session()` with an `async with` block for automatic commit/rollback handling.
+The standard pattern is to use `Model.get_session()` within an `async with` block. This block creates a session and a transaction. If the block completes successfully, you can commit the transaction with `await session.commit()`. If an exception occurs, the transaction is automatically rolled back.
 
 ```python
 from models import City  # Assuming another model exists
 
 
 async def complex_operation():
-    async with await User.get_session() as session:
+    async with User.get_session() as session:
         try:
             user_frank = User(name="Frank", email="frank@acme.com")
-            # Pass the explicit session, and set commit=False
-            await User.add(user_frank, commit=False, session=session)
+            # Pass the explicit session to all operations
+            await User.add(user_frank, session=session)
 
             city = City(name="Frankfurt", population=750000)
-            await city.save(commit=False, session=session)
+            await city.save(session=session)
 
             # All operations will be committed together here
             await session.commit()
@@ -386,21 +395,6 @@ async def complex_operation():
             print(f"An error occurred: {e}. Transaction will be rolled back.")
             # Rollback happens automatically when the 'async with' block exits on an error.
 ```
-
-## Automatic Session Management (for scripts & REPL)
-
-For convenience in short scripts, interactive sessions (like IPython or a Jupyter notebook), or for simple read-only operations, you can omit the `session` parameter. When you do, Achemy creates a short-lived session for that single operation.
-
-**This is not recommended for production applications**, as it is less efficient and does not provide transactional control over multiple operations.
-
-```python
-# Automatic session handling (for simple cases)
-user = await User.find_by(name="Alice")
-if user:
-    print(f"Found user: {user.name}")
-```
-
-Each call above would use its own separate session.
 
 ## Mixins
 
