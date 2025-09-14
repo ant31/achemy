@@ -7,6 +7,7 @@ import uuid  # Import uuid for tests
 from unittest.mock import patch  # For mocking
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import String, UniqueConstraint  # Import String for MockColumnType
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column  # Import Mapped and mapped_column
