@@ -467,17 +467,33 @@ async def test_instance_state_management(unique_id):
         assert expunged_instance.name == "state_test_modified_check"
 
 
-@pytest.mark.asyncio
-async def test_querying_methods(unique_id, caplog):
-    """Test querying methods: where, first, get, count."""
+@pytest_asyncio.fixture
+async def querying_data(unique_id):
+    """Fixture to create data for querying tests and handle cleanup."""
     Model = SimpleModel
-    # Setup: Create some data
+    # Setup
     async with Model.get_session() as s:
         inst1 = await Model(name=f"query_A_{unique_id}").save(s, commit=True)
         inst2 = await Model(name=f"query_B_{unique_id}").save(s, commit=True)
         inst3 = await Model(name=f"query_C_{unique_id}").save(s, commit=True)
 
-    # --- Test where ---
+    yield inst1, inst2, inst3
+
+    # Teardown / Cleanup
+    async with Model.get_session() as s:
+        # Model.delete handles merging internally, so this should be safe.
+        await Model.delete(inst1, s)
+        await Model.delete(inst2, s)
+        await Model.delete(inst3, s)
+        await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_querying_where(unique_id, caplog, querying_data):
+    """Test the 'where' querying method."""
+    Model = SimpleModel
+    inst1, inst2, inst3 = querying_data
+
     # 1. Where with keyword argument
     async with Model.get_session() as s:
         query_kw = Model.where(name=inst2.name)
@@ -508,9 +524,16 @@ async def test_querying_methods(unique_id, caplog):
         filtered_items_warn = [item for item in items_warn if item.id in test_ids]
         assert len(filtered_items_warn) == 3
 
+
+@pytest.mark.asyncio
+async def test_querying_first_get_count(unique_id, querying_data):
+    """Test 'first', 'get', and 'count' querying methods."""
+    Model = SimpleModel
+    # Data is created by the querying_data fixture
+
     # --- Test first ---
     async with Model.get_session() as s:
-        # 1. First with default order (PK) - difficult to assert exact order, just check one is returned
+        # 1. First with default order (PK) - check that *a* record is returned
         first_default = await Model.first(s)
         assert first_default is not None
         assert isinstance(first_default, Model)
@@ -520,7 +543,6 @@ async def test_querying_methods(unique_id, caplog):
         assert first_none is None
 
     # --- Test get ---
-    # (get success is covered in other tests)
     # 1. Get non-existent PK
     non_existent_pk = uuid.uuid4()
     async with Model.get_session() as s:
@@ -529,9 +551,9 @@ async def test_querying_methods(unique_id, caplog):
 
     # --- Test count ---
     async with Model.get_session() as s:
-        # 1. Count all (may include data from other tests, filter if needed)
+        # 1. Count all
         total_count = await Model.count(s)
-        assert total_count >= 3  # Should be at least the 3 we created
+        assert total_count >= 3  # At least the 3 we created
 
         # 2. Count with a query
         query_count = Model.where(Model.name.like(f"query_%_{unique_id}"))
@@ -542,13 +564,6 @@ async def test_querying_methods(unique_id, caplog):
         query_count_none = Model.where(Model.name == "non_existent")
         count_none = await Model.count(s, query=query_count_none)
         assert count_none == 0
-
-    # Cleanup
-    async with Model.get_session() as s:
-        await Model.delete(inst1, s)
-        await Model.delete(inst2, s)
-        await Model.delete(inst3, s)
-        await s.commit()
 
 
 @pytest.mark.asyncio
