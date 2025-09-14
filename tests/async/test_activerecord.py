@@ -925,6 +925,6 @@ async def test_bulk_insert_invalid_on_conflict_value(unique_id):
     Model = SimpleModel
     objs_to_insert = [Model(name=f"invalid_conflict_{unique_id}")]
 
-    with pytest.raises(ValueError, match="Invalid on_conflict strategy 'bogus_value' for PostgreSQL."):
+    with pytest.raises(ValueError, match=r"Invalid on_conflict strategy 'bogus_value' for PostgreSQL."):
         async with Model.get_session() as s:
             await Model.bulk_insert(objs_to_insert, s, on_conflict="bogus_value")  # type: ignore
