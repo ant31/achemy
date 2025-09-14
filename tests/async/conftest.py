@@ -110,7 +110,7 @@ async def aclean_tables(async_engine, acreate_tables): # Depend on acreate_table
     print("aclean: Cleaning tables before session...")
     # Use the engine manager provided by the fixture
     # Get a session using the globally set engine manager
-    async with await ActiveRecord.get_session() as session:
+    async with ActiveRecord.get_session() as session:
         print("Cleaning tables...")
         async with session.begin(): # Use a transaction for cleanup
             print("Cleaning tables in transaction...")
@@ -129,7 +129,7 @@ async def aclean_tables(async_engine, acreate_tables): # Depend on acreate_table
 
     # Add cleanup *after* the session as well to ensure clean state
     print("aclean: Cleaning tables post-session...")
-    async with await ActiveRecord.get_session() as session:
+    async with ActiveRecord.get_session() as session:
         print("Cleaning tables post-session...")
         async with session.begin():
             print("Cleaning tables post-session in transaction...")

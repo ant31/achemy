@@ -17,20 +17,17 @@ async def test_integration_create_retrieve_update_delete(async_engine, unique_id
     # Note: Relies on unique_id for isolation instead of table cleaning.
     async with await ACountry.get_session() as session:
 
-        user = AResident(
-            name=f"intuser_{unique_id}",
-            email=f"int_{unique_id}@example.com"
-        )
-        await user.save(commit=True, session=session)
+        user = AResident(name=f"intuser_{unique_id}", email=f"int_{unique_id}@example.com")
+        await user.save(session, commit=True)
         user_id = user.id
 
         # Retrieve the user
-        retrieved_user = await AResident.get(user_id, session=session)
+        retrieved_user = await AResident.get(session, user_id)
         assert retrieved_user is not None
         assert retrieved_user.name == f"intuser_{unique_id}"
         assert retrieved_user.email == f"int_{unique_id}@example.com"
 
-        c1 = await ACountry(name="country1", code=f"c1_{unique_id}").save(commit=True, session=session)
+        c1 = await ACountry(name="country1", code=f"c1_{unique_id}").save(session, commit=True)
         # await c1.refresh_me()
         await session.refresh(c1)
         assert c1.id != uuid.UUID("00000000-0000-0000-0000-000000000000")
@@ -38,23 +35,23 @@ async def test_integration_create_retrieve_update_delete(async_engine, unique_id
         # Create items for the user
         queries = []
         for i in range(3):
-            queries.append(ACity(name=f"city{i}", country_id=c1.id).save(session=session, commit=False))
+            queries.append(ACity(name=f"city{i}", country_id=c1.id).save(session, commit=False))
         cities = await asyncio.gather(*queries)
         await session.commit()
         assert len(cities) == 3
-        c1_new = await ACountry.get(c1.id, session=session)
+        c1_new = await ACountry.get(session, c1.id)
         assert c1_new is not None
-        assert len(await ACity.all()) == 3
+        assert len(await ACity.all(session)) == 3
         assert len(await c1_new.awaitable_attrs.cities) == 3
         assert all(city.country_id == c1.id for city in cities)
 
         # Update the user
         code = f"c2_{unique_id}"
         c1_new.code = code
-        c1_new = await c1_new.save(commit=True, session=session)
+        c1_new = await c1_new.save(session, commit=True)
 
-#     # verify update
-        c1_new = await ACountry.find(c1.id, session=session)
+        #     # verify update
+        c1_new = await ACountry.find(session, c1.id)
         assert c1_new is not None
         assert c1_new.code == code
 
@@ -62,9 +59,9 @@ async def test_integration_create_retrieve_update_delete(async_engine, unique_id
         new_cities_result = await ACity.where(ACity.country_id == c1.id).scalars(session=session)
         new_cities = new_cities_result.all()
         assert len(new_cities) == 3
-        await ACountry.delete(c1_new, session=session)
+        await ACountry.delete(c1_new, session)
         await session.commit()
-        c1_new = await ACountry.find(c1.id, session=session)
+        c1_new = await ACountry.find(session, c1.id)
         assert c1_new is None
 
         # Pass session to scalars()
@@ -77,66 +74,65 @@ async def test_integration_create_retrieve_update_delete(async_engine, unique_id
 async def test_integration_first(async_engine, unique_id): # Removed aclean_tables
     """Test the ActiveRecord.first() method."""
     # Note: Relies on unique_id for isolation instead of table cleaning.
-    async with await ACountry.get_session() as session:
+    async with ACountry.get_session() as session:
         # Create some data with predictable order
         # Removed sleeps - rely on transaction order/PK uniqueness
-        c1 = await ACountry(name=f"Zimbabwe_{unique_id}", code=f"ZW_{unique_id}").save(commit=True, session=session)
+        c1 = await ACountry(name=f"Zimbabwe_{unique_id}", code=f"ZW_{unique_id}").save(session, commit=True)
         # Should be last alphabetically
-        c2 = await ACountry(name=f"Albania_{unique_id}", code=f"AL_{unique_id}").save(commit=True, session=session)
+        c2 = await ACountry(name=f"Albania_{unique_id}", code=f"AL_{unique_id}").save(session, commit=True)
         # Should be first alphabetically
-        c3 = await ACountry(name=f"Canada_{unique_id}", code=f"CA_{unique_id}").save(commit=True, session=session)
+        c3 = await ACountry(name=f"Canada_{unique_id}", code=f"CA_{unique_id}").save(session, commit=True)
 
         # 1. Test first() without arguments (default order by PK)
         # The actual order depends on UUID generation, so we can't reliably assert which one is first by PK.
         # Instead, we'll just check that *a* record is returned.
-        first_by_pk = await ACountry.first(session=session)
+        first_by_pk = await ACountry.first(session)
         assert first_by_pk is not None
         assert isinstance(first_by_pk, ACountry)
 
         # 2. Test first() with explicit order_by (name ascending)
-        first_by_name_asc = await ACountry.first(order_by=ACountry.name.asc(), session=session)
+        first_by_name_asc = await ACountry.first(session, order_by=ACountry.name.asc())
         assert first_by_name_asc is not None
         assert first_by_name_asc.id == c2.id
         assert first_by_name_asc.name == f"Albania_{unique_id}"
 
         # 3. Test first() with explicit order_by (name descending)
-        first_by_name_desc = await ACountry.first(order_by=ACountry.name.desc(), session=session)
+        first_by_name_desc = await ACountry.first(session, order_by=ACountry.name.desc())
         assert first_by_name_desc is not None
         assert first_by_name_desc.id == c1.id
         assert first_by_name_desc.name == f"Zimbabwe_{unique_id}"
 
         # 4. Test first() with a query (where clause)
         query = ACountry.select().where(ACountry.code == f"CA_{unique_id}")
-        first_canada = await ACountry.first(query=query, session=session)
+        first_canada = await ACountry.first(session, query=query)
         assert first_canada is not None
         assert first_canada.id == c3.id
         assert first_canada.code == f"CA_{unique_id}"
 
         # 5. Test first() with a query and order_by
-        query_ordered = ACountry.select().where(ACountry.name.like('%a%')).order_by(ACountry.name.asc())
+        query_ordered = ACountry.select().where(ACountry.name.like("%a%")).order_by(ACountry.name.asc())
         # Albania, Canada, Zimbabwe -> Albania
-        first_a_asc = await ACountry.first(query=query_ordered, session=session)
+        first_a_asc = await ACountry.first(session, query=query_ordered)
         assert first_a_asc is not None
-        assert first_a_asc.id == c2.id # Albania
+        assert first_a_asc.id == c2.id  # Albania
 
-        query_ordered_desc = ACountry.select().where(ACountry.name.like('%a%')).order_by(ACountry.name.desc())
+        query_ordered_desc = ACountry.select().where(ACountry.name.like("%a%")).order_by(ACountry.name.desc())
         # Zimbabwe, Canada, Albania -> Zimbabwe
-        first_a_desc = await ACountry.first(query=query_ordered_desc, session=session)
+        first_a_desc = await ACountry.first(session, query=query_ordered_desc)
         assert first_a_desc is not None
-        assert first_a_desc.id == c1.id # Zimbabwe
-
+        assert first_a_desc.id == c1.id  # Zimbabwe
 
         # 6. Test first() when no records match
         query_none = ACountry.select().where(ACountry.code == "XX")
-        first_none = await ACountry.first(query=query_none, session=session)
+        first_none = await ACountry.first(session, query=query_none)
         assert first_none is None
 
         # 7. Test first() using an externally provided session
         # Create a new session
-        async with await ACountry.get_session() as external_session:
-            first_external_session = await ACountry.first(order_by=ACountry.name.asc(), session=external_session)
+        async with ACountry.get_session() as external_session:
+            first_external_session = await ACountry.first(external_session, order_by=ACountry.name.asc())
             assert first_external_session is not None
-            assert first_external_session.id == c2.id # Should still find Albania
+            assert first_external_session.id == c2.id  # Should still find Albania
 
 
 @pytest.mark.asyncio
@@ -148,28 +144,29 @@ async def test_integration_add_all(async_engine, unique_id): # Removed aclean_ta
         ACountry(name=f"Commit_{unique_id}_1", code=f"C{unique_id}1"),
         ACountry(name=f"Commit_{unique_id}_2", code=f"C{unique_id}2"),
     ]
-    added_countries_commit = await ACountry.add_all(countries_to_add_commit)
+    async with ACountry.get_session() as s:
+        added_countries_commit = await ACountry.add_all(countries_to_add_commit, s)
 
     assert len(added_countries_commit) == 2
-    assert all(c.id is not None for c in added_countries_commit) # Should have IDs after commit
+    assert all(c.id is not None for c in added_countries_commit)  # Should have IDs after commit
     # Verify they are in the DB using a new session
-    async with await ACountry.get_session() as verify_session:
-        found1 = await ACountry.find_by(code=f"C{unique_id}1", session=verify_session)
-        found2 = await ACountry.find_by(code=f"C{unique_id}2", session=verify_session)
+    async with ACountry.get_session() as verify_session:
+        found1 = await ACountry.find_by(verify_session, code=f"C{unique_id}1")
+        found2 = await ACountry.find_by(verify_session, code=f"C{unique_id}2")
         assert found1 is not None
         assert found2 is not None
         assert found1.name == f"Commit_{unique_id}_1"
         assert found2.name == f"Commit_{unique_id}_2"
 
     # 2. Test add_all with commit=False
-    async with await ACountry.get_session() as session_no_commit:
+    async with ACountry.get_session() as session_no_commit:
         countries_to_add_no_commit = [
             ACountry(name=f"NoCommit_{unique_id}_1", code=f"NC{unique_id}1"),
             ACountry(name=f"NoCommit_{unique_id}_2", code=f"NC{unique_id}2"),
         ]
         # Add within the session context, but don't commit yet
         added_countries_no_commit = await ACountry.add_all(
-            countries_to_add_no_commit, commit=False, session=session_no_commit
+            countries_to_add_no_commit, session_no_commit, commit=False
         )
 
         assert len(added_countries_no_commit) == 2
@@ -177,9 +174,9 @@ async def test_integration_add_all(async_engine, unique_id): # Removed aclean_ta
         ids = await asyncio.gather(*[c.awaitable_attrs.id for c in added_countries_no_commit])
         assert all(c is not None for c in ids)
         # Verify they are NOT YET in the DB using a separate session
-        async with await ACountry.get_session() as verify_session_no_commit:
-            found_nc1_before = await ACountry.find_by(code=f"NC{unique_id}1", session=verify_session_no_commit)
-            found_nc2_before = await ACountry.find_by(code=f"NC{unique_id}2", session=verify_session_no_commit)
+        async with ACountry.get_session() as verify_session_no_commit:
+            found_nc1_before = await ACountry.find_by(verify_session_no_commit, code=f"NC{unique_id}1")
+            found_nc2_before = await ACountry.find_by(verify_session_no_commit, code=f"NC{unique_id}2")
             assert found_nc1_before is None
             assert found_nc2_before is None
 
@@ -187,27 +184,28 @@ async def test_integration_add_all(async_engine, unique_id): # Removed aclean_ta
         await session_no_commit.commit()
 
         # Verify they ARE NOW in the DB using a new session
-        async with await ACountry.get_session() as verify_session_after_commit:
-            found_nc1_after = await ACountry.find_by(code=f"NC{unique_id}1", session=verify_session_after_commit)
-            found_nc2_after = await ACountry.find_by(code=f"NC{unique_id}2", session=verify_session_after_commit)
+        async with ACountry.get_session() as verify_session_after_commit:
+            found_nc1_after = await ACountry.find_by(verify_session_after_commit, code=f"NC{unique_id}1")
+            found_nc2_after = await ACountry.find_by(verify_session_after_commit, code=f"NC{unique_id}2")
             assert found_nc1_after is not None
             assert found_nc2_after is not None
             assert found_nc1_after.name == f"NoCommit_{unique_id}_1"
             assert found_nc2_after.name == f"NoCommit_{unique_id}_2"
 
     # 3. Test add_all with explicit session (commit=True)
-    async with await ACountry.get_session() as explicit_session:
+    async with ACountry.get_session() as explicit_session:
         countries_explicit = [
             ACountry(name=f"Explicit_{unique_id}_1", code=f"EX{unique_id}1"),
         ]
-        await ACountry.add_all(countries_explicit, session=explicit_session) # Commit=True is default
+        await ACountry.add_all(countries_explicit, explicit_session)  # Commit=True is default
         # Verify within the same session (already committed)
-        found_ex1 = await ACountry.find_by(code=f"EX{unique_id}1", session=explicit_session)
+        found_ex1 = await ACountry.find_by(explicit_session, code=f"EX{unique_id}1")
         assert found_ex1 is not None
 
     # 4. Test add_all with empty list
-    added_empty = await ACountry.add_all([])
-    assert added_empty == []
+    async with ACountry.get_session() as s:
+        added_empty = await ACountry.add_all([], s)
+        assert added_empty == []
 
     # 5. Test add_all error handling (commit error) - Mocking needed
     # This requires mocking the session.commit() to raise an error
@@ -215,28 +213,28 @@ async def test_integration_add_all(async_engine, unique_id): # Removed aclean_ta
     # but the principle is to ensure rollback occurs.
 
     # 6. Test add_all error handling (flush error - e.g., constraint)
-    async with await ACountry.get_session() as session_flush_error:
+    async with ACountry.get_session() as session_flush_error:
         # Create a country first to cause a unique constraint violation
         # Removed unused variable assignment and fixed line length
         await ACountry(name=f"Constraint_{unique_id}", code=f"CON{unique_id}").save(
-            commit=True, session=session_flush_error
+            session_flush_error, commit=True
         )
 
         countries_violation = [
             ACountry(name=f"Valid_{unique_id}", code=f"VALID{unique_id}"),
-            ACountry(name=f"Duplicate_{unique_id}", code=f"CON{unique_id}") # Duplicate code
+            ACountry(name=f"Duplicate_{unique_id}", code=f"CON{unique_id}"),  # Duplicate code
         ]
         # Catch a more specific SQLAlchemy error, likely IntegrityError for unique constraint
         with pytest.raises(SQLAlchemyError):
-             # Use the same session, commit=False to trigger flush error
-            await ACountry.add_all(countries_violation, commit=False, session=session_flush_error)
+            # Use the same session, commit=False to trigger flush error
+            await ACountry.add_all(countries_violation, session_flush_error, commit=False)
 
         # Verify the valid one wasn't added either due to rollback within the context manager
         # (Note: add_all itself doesn't explicitly rollback on flush error,
         # the session context manager does if an error propagates out)
-        async with await ACountry.get_session() as verify_session_flush:
-             found_valid = await ACountry.find_by(code=f"VALID{unique_id}", session=verify_session_flush)
-             assert found_valid is None
+        async with ACountry.get_session() as verify_session_flush:
+            found_valid = await ACountry.find_by(verify_session_flush, code=f"VALID{unique_id}")
+            assert found_valid is None
 
 
 # @pytest.mark.asyncio

@@ -82,16 +82,11 @@ async def test_session_management(async_engine, unique_id):
     assert factory is expected_factory
 
     # 2. Test get_session creates a new session
-    async with await SimpleModel.get_session() as session1:
+    async with SimpleModel.get_session() as session1:
         assert session1 is not None
         assert session1.is_active
 
-    # 3. Test get_session returns provided session
-    async with await SimpleModel.get_session() as provided_session:
-        returned_session = await SimpleModel.get_session(session=provided_session)
-        assert returned_session is provided_session
-
-    # 4. Test session_factory error when not configured
+    # 3. Test session_factory error when not configured
     class UnconfiguredModel(ActiveRecord):
         __tablename__ = "unconfigured_session_test"
         # No engine set
@@ -102,11 +97,11 @@ async def test_session_management(async_engine, unique_id):
     with pytest.raises(ValueError, match="Session factory not configured"):
         UnconfiguredModel.session_factory()
 
-    # 5. Test obj_session
+    # 4. Test obj_session
     instance = SimpleModel(name=f"session_test_{unique_id}")
     assert instance.obj_session() is None # Transient object has no session
 
-    async with await SimpleModel.get_session() as s:
+    async with SimpleModel.get_session() as s:
         # Add instance to session
         s.add(instance)
         await s.flush([instance]) # Flush to make it persistent in this session
@@ -156,44 +151,25 @@ async def test_session_factory_retry(async_engine, caplog):
 
 
 @pytest.mark.asyncio
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-async def test_new_session_deprecated(caplog):
-    """Test the deprecated new_session method."""
-    Model = SimpleModel # Use an existing configured model
-    caplog.clear()
-
-    # Calling new_session should log a warning and return a session
-    async with await Model.new_session() as session:
-        assert "new_session() is deprecated. Use get_session() instead." in caplog.text
-        assert session is not None
-        assert session.is_active
-
-    # Test passing an existing session
-    caplog.clear()
-    async with await Model.get_session() as existing_session:
-        returned_session = await Model.new_session(session=existing_session)
-        assert "new_session() is deprecated. Use get_session() instead." in caplog.text
-        assert returned_session is existing_session
-
-
-@pytest.mark.asyncio
 async def test_ensure_obj_session_merges_object(unique_id):
     """Test that _ensure_obj_session merges the object if not in the provided session."""
     Model = SimpleModel
     instance_name = f"ensure_merge_{unique_id}"
-    # Create and save instance (implicitly uses and closes a session)
-    instance = await Model(name=instance_name).save(commit=True)
-    assert instance.obj_session() is None # Should be detached after save's session closes
+    # Create and save instance in one session to make it persistent
+    async with Model.get_session() as s:
+        instance = await Model(name=instance_name).save(s, commit=True)
+    # After the session closes, the instance is detached.
+    assert instance.obj_session() is None
 
     # Create a new session
-    async with await Model.get_session() as session2:
+    async with Model.get_session() as session2:
         # Instance is not initially in session2
         assert instance not in session2
 
         # Mock session2.merge to check if it's called
         with patch.object(session2, 'merge', wraps=session2.merge) as mock_merge:
             # Call a method that uses _ensure_obj_session with the new session
-            refreshed_instance = await instance.refresh(session=session2)
+            refreshed_instance = await instance.refresh(session2)
 
             # Assert merge was called with the instance
             mock_merge.assert_awaited_once_with(instance)
@@ -201,50 +177,6 @@ async def test_ensure_obj_session_merges_object(unique_id):
             # Assert the instance is now associated with session2
             assert refreshed_instance in session2
             assert refreshed_instance.obj_session() is session2
-
-
-@pytest.mark.asyncio
-async def test_ensure_obj_session_gets_default_session(unique_id, caplog):
-    """Test _ensure_obj_session gets default session for transient/detached obj."""
-    Model = SimpleModel
-    instance_name = f"ensure_default_session_{unique_id}"
-    # Create a transient instance (not saved)
-    instance = Model(name=instance_name)
-    assert instance.obj_session() is None # Transient object has no session
-
-    caplog.set_level(logging.DEBUG, logger="achemy.activerecord") # Set log level
-    caplog.clear()
-
-    # Calling refresh on a transient object will trigger _ensure_obj_session
-    # to get a default session and merge the object.
-    # However, the refresh operation itself will fail later when trying to
-    # load state from the DB for a non-existent object. We expect this error.
-    # obtained_session = None # Removed unused variable
-    try:
-        # We expect refresh to fail after acquiring the session
-        await instance.refresh()
-        pytest.fail("instance.refresh() should have raised an error for a transient object")
-    except Exception as e:
-        # Catch the expected error from SQLAlchemy trying to refresh a non-persistent obj
-        # This might be InvalidRequestError or similar depending on exact state.
-        # Catching a broad Exception initially, refine if needed.
-        print(f"Caught expected exception during refresh: {type(e).__name__}: {e}")
-        # Verify the session acquisition logs occurred *before* the error
-        assert "Got default session" in caplog.text
-        assert "Merging object" in caplog.text
-        # Extract the session representation from the log to check obj_session
-        log_lines = caplog.text.splitlines()
-        session_log_line = next((line for line in log_lines if "Got default session" in line), None)
-        assert session_log_line is not None
-        # Example log: "Got default session <AsyncSession ...> for object ..."
-        session_repr = session_log_line.split("Got default session ")[1].split(" for object")[0]
-        print(f"Session representation from log: {session_repr}")
-
-    # Even though refresh failed, the object *was* associated with a session
-    # during the _ensure_obj_session call *before* the error, as confirmed by logs.
-    # Checking instance.obj_session() after the error is unreliable as the session
-    # might have been closed/rolled back due to the exception.
-    # The log checks above are sufficient to verify the desired code path was hit.
 
 
 @pytest.mark.asyncio
@@ -270,7 +202,8 @@ async def test_instance_representation_and_data(unique_id):
     # 2. Test id_key
     # Transient object id_key might vary, let's test after save
     # assert instance.id_key() == f"SimpleModel:transient_{id(instance)}" # Less reliable
-    await instance.save(commit=True)
+    async with SimpleModel.get_session() as s:
+        await instance.save(s, commit=True)
     assert instance.id_key() == f"SimpleModel:{instance_id}"
 
     # 3. Test __columns__fields__
@@ -401,57 +334,61 @@ async def test_crud_add_all(unique_id):
     # (add_all tests are also covered in test_async_integration.py)
     instance4_name = f"crud_add_all1_{unique_id}"
     instance5_name = f"crud_add_all2_{unique_id}"
-    instances_to_add = [
-        SimpleModel(name=instance4_name),
-        SimpleModel(name=instance5_name)
-    ]
-    added_all_instances = await SimpleModel.add_all(instances_to_add) # commit=True default
-    assert len(added_all_instances) == 2
-    instance4_id = added_all_instances[0].id
-    instance5_id = added_all_instances[1].id
-    assert await SimpleModel.get(instance4_id) is not None
-    assert await SimpleModel.get(instance5_id) is not None
+    instances_to_add = [SimpleModel(name=instance4_name), SimpleModel(name=instance5_name)]
+    async with SimpleModel.get_session() as s:
+        added_all_instances = await SimpleModel.add_all(instances_to_add, s)  # commit=True default
+        assert len(added_all_instances) == 2
+        instance4_id = added_all_instances[0].id
+        instance5_id = added_all_instances[1].id
+        assert await SimpleModel.get(s, instance4_id) is not None
+        assert await SimpleModel.get(s, instance5_id) is not None
 
 
 @pytest.mark.asyncio
 async def test_crud_delete(unique_id):
     """Test ActiveRecord.delete() method."""
     # Setup: Create instances to delete
-    inst1 = await SimpleModel(name=f"del1_{unique_id}").save(commit=True)
-    inst2 = await SimpleModel(name=f"del2_{unique_id}").save(commit=True)
-    inst3 = await SimpleModel(name=f"del3_{unique_id}").save(commit=True)
+    async with SimpleModel.get_session() as s:
+        inst1 = await SimpleModel(name=f"del1_{unique_id}").save(s, commit=True)
+        inst2 = await SimpleModel(name=f"del2_{unique_id}").save(s, commit=True)
+        inst3 = await SimpleModel(name=f"del3_{unique_id}").save(s, commit=True)
 
     # 1. Delete with commit=True (default)
-    await SimpleModel.delete(inst1)
-    assert await SimpleModel.get(inst1.id) is None
+    async with SimpleModel.get_session() as s:
+        await SimpleModel.delete(inst1, s)
+    async with SimpleModel.get_session() as s:
+        assert await SimpleModel.get(s, inst1.id) is None
 
     # 2. Delete with commit=False
-    async with await SimpleModel.get_session() as session_del_no_commit:
+    async with SimpleModel.get_session() as session_del_no_commit:
         # Retrieve instance 2 again within this session context
-        instance2_to_delete = await SimpleModel.get(inst2.id, session=session_del_no_commit)
+        instance2_to_delete = await SimpleModel.get(session_del_no_commit, inst2.id)
         assert instance2_to_delete is not None
-        await SimpleModel.delete(instance2_to_delete, commit=False, session=session_del_no_commit)
+        await SimpleModel.delete(instance2_to_delete, session_del_no_commit, commit=False)
 
         # Verify it's STILL in the DB via another session
-        found2_before_del_commit = await SimpleModel.get(inst2.id)
-        assert found2_before_del_commit is not None
+        async with SimpleModel.get_session() as s2:
+            found2_before_del_commit = await SimpleModel.get(s2, inst2.id)
+            assert found2_before_del_commit is not None
 
         # Commit the delete
         await session_del_no_commit.commit()
 
     # Verify it's NOW deleted
-    assert await SimpleModel.get(inst2.id) is None
+    async with SimpleModel.get_session() as s2:
+        assert await SimpleModel.get(s2, inst2.id) is None
 
     # 3. Delete with provided session (commit=True)
-    async with await SimpleModel.get_session() as provided_del_session:
-        instance3_to_delete = await SimpleModel.get(inst3.id, session=provided_del_session)
+    async with SimpleModel.get_session() as provided_del_session:
+        instance3_to_delete = await SimpleModel.get(provided_del_session, inst3.id)
         assert instance3_to_delete is not None
-        await SimpleModel.delete(instance3_to_delete, commit=True, session=provided_del_session)
+        await SimpleModel.delete(instance3_to_delete, provided_del_session, commit=True)
         # Verify deleted within the same session
-        assert await SimpleModel.get(inst3.id, session=provided_del_session) is None
+        assert await SimpleModel.get(provided_del_session, inst3.id) is None
 
     # Verify deleted in a new session
-    assert await SimpleModel.get(inst3.id) is None
+    async with SimpleModel.get_session() as s:
+        assert await SimpleModel.get(s, inst3.id) is None
 
 
 @pytest.mark.asyncio
@@ -459,33 +396,34 @@ async def test_instance_state_management(unique_id):
     """Test instance state methods: refresh, expire, expunge, is_modified."""
     Model = SimpleModel
     instance_name = f"state_test_{unique_id}"
-    instance = await Model(name=instance_name).save(commit=True)
+    async with Model.get_session() as s:
+        instance = await Model(name=instance_name).save(s, commit=True)
     instance_id = instance.id
 
     # --- Test refresh ---
-    async with await Model.get_session() as session1:
+    async with Model.get_session() as session1:
         # Load the instance into session1 FIRST
-        instance_in_s1 = await Model.get(instance_id, session=session1)
-        assert instance_in_s1.name == instance_name # Check initial state
+        instance_in_s1 = await Model.get(session1, instance_id)
+        assert instance_in_s1.name == instance_name  # Check initial state
 
         # Modify data in DB using a different instance/session
-        async with await Model.get_session() as session2:
-            instance_alt = await Model.get(instance_id, session=session2)
+        async with Model.get_session() as session2:
+            instance_alt = await Model.get(session2, instance_id)
             instance_alt.name = f"state_test_updated_{unique_id}"
-            await instance_alt.save(commit=True, session=session2)
+            await instance_alt.save(session2, commit=True)
 
         # Verify instance in session1 STILL has the old name (due to session cache)
         assert instance_in_s1.name == instance_name
 
         # Refresh the instance in session1
-        refreshed_instance = await instance_in_s1.refresh(session=session1)
-        assert refreshed_instance is instance_in_s1 # Should return the same instance
+        refreshed_instance = await instance_in_s1.refresh(session1)
+        assert refreshed_instance is instance_in_s1  # Should return the same instance
         # Now it should have the updated name
         assert refreshed_instance.name == f"state_test_updated_{unique_id}"
 
     # --- Test expire ---
-    async with await Model.get_session() as session3:
-        instance_in_s3 = await Model.get(instance_id, session=session3)
+    async with Model.get_session() as session3:
+        instance_in_s3 = await Model.get(session3, instance_id)
         # Ensure name is the updated one
         assert instance_in_s3.name == f"state_test_updated_{unique_id}"
 
@@ -493,36 +431,36 @@ async def test_instance_state_management(unique_id):
         instance_in_s3.name = "state_test_expired_local"
 
         # Expire the instance (or specific attributes)
-        expired_instance = await instance_in_s3.expire(session=session3)
+        expired_instance = await instance_in_s3.expire(session3)
         # Explicitly refresh the attribute instead of relying on lazy load after expire,
         # as implicit load seems to cause MissingGreenlet error here.
-        await session3.refresh(expired_instance, attribute_names=['name'])
+        await session3.refresh(expired_instance, attribute_names=["name"])
         # Accessing the attribute should now work without triggering implicit load
         assert expired_instance.name == f"state_test_updated_{unique_id}"
 
     # --- Test is_modified ---
-    async with await Model.get_session() as session4:
-        instance_in_s4 = await Model.get(instance_id, session=session4)
+    async with Model.get_session() as session4:
+        instance_in_s4 = await Model.get(session4, instance_id)
         # Initially, not modified
-        assert not await instance_in_s4.is_modified(session=session4)
+        assert not await instance_in_s4.is_modified(session4)
 
         # Modify the instance
         instance_in_s4.name = "state_test_modified_check"
         # Now it should be marked as modified (dirty)
-        assert await instance_in_s4.is_modified(session=session4)
+        assert await instance_in_s4.is_modified(session4)
 
         # Commit the change
         await session4.commit()
         # After commit, it should no longer be modified
-        assert not await instance_in_s4.is_modified(session=session4)
+        assert not await instance_in_s4.is_modified(session4)
 
     # --- Test expunge ---
-    async with await Model.get_session() as session5:
-        instance_in_s5 = await Model.get(instance_id, session=session5)
-        assert instance_in_s5 in session5 # Should be in the session
+    async with Model.get_session() as session5:
+        instance_in_s5 = await Model.get(session5, instance_id)
+        assert instance_in_s5 in session5  # Should be in the session
 
         # Expunge the instance
-        expunged_instance = await instance_in_s5.expunge(session=session5)
+        expunged_instance = await instance_in_s5.expunge(session5)
         assert expunged_instance is instance_in_s5
         # Now it should be detached
         assert instance_in_s5 not in session5
@@ -535,13 +473,14 @@ async def test_querying_methods(unique_id, caplog):
     """Test querying methods: where, first, get, count."""
     Model = SimpleModel
     # Setup: Create some data
-    inst1 = await Model(name=f"query_A_{unique_id}").save(commit=True)
-    inst2 = await Model(name=f"query_B_{unique_id}").save(commit=True)
-    inst3 = await Model(name=f"query_C_{unique_id}").save(commit=True)
+    async with Model.get_session() as s:
+        inst1 = await Model(name=f"query_A_{unique_id}").save(s, commit=True)
+        inst2 = await Model(name=f"query_B_{unique_id}").save(s, commit=True)
+        inst3 = await Model(name=f"query_C_{unique_id}").save(s, commit=True)
 
     # --- Test where ---
     # 1. Where with keyword argument
-    async with await Model.get_session() as s:
+    async with Model.get_session() as s:
         query_kw = Model.where(name=inst2.name)
         results_kw = await query_kw.scalars(session=s)
         items_kw = results_kw.all()
@@ -549,7 +488,7 @@ async def test_querying_methods(unique_id, caplog):
         assert items_kw[0].id == inst2.id
 
     # 2. Where with positional argument
-    async with await Model.get_session() as s:
+    async with Model.get_session() as s:
         query_pos = Model.where(Model.name == inst3.name)
         results_pos = await query_pos.scalars(session=s)
         items_pos = results_pos.all()
@@ -561,7 +500,7 @@ async def test_querying_methods(unique_id, caplog):
     query_warn = Model.where(non_existent_attr="value")
     assert "Ignoring keyword argument 'non_existent_attr'" in caplog.text
     # Check that the query still works but ignores the bad kwarg
-    async with await Model.get_session() as s:
+    async with Model.get_session() as s:
         # This query should return all 3 items created in this test
         results_warn = await query_warn.scalars(session=s)
         items_warn = results_warn.all()
@@ -571,43 +510,46 @@ async def test_querying_methods(unique_id, caplog):
         assert len(filtered_items_warn) == 3
 
     # --- Test first ---
-    # 1. First with default order (PK) - difficult to assert exact order, just check one is returned
-    first_default = await Model.first()
-    assert first_default is not None
-    assert isinstance(first_default, Model)
+    async with Model.get_session() as s:
+        # 1. First with default order (PK) - difficult to assert exact order, just check one is returned
+        first_default = await Model.first(s)
+        assert first_default is not None
+        assert isinstance(first_default, Model)
 
-    # 2. First when no results match
-    first_none = await Model.first(query=Model.where(Model.name == "non_existent"))
-    assert first_none is None
+        # 2. First when no results match
+        first_none = await Model.first(s, query=Model.where(Model.name == "non_existent"))
+        assert first_none is None
 
     # --- Test get ---
     # (get success is covered in other tests)
     # 1. Get non-existent PK
     non_existent_pk = uuid.uuid4()
-    get_none = await Model.get(non_existent_pk)
-    assert get_none is None
+    async with Model.get_session() as s:
+        get_none = await Model.get(s, non_existent_pk)
+        assert get_none is None
 
     # --- Test count ---
-    # 1. Count all (may include data from other tests, filter if needed)
-    total_count = await Model.count()
-    assert total_count >= 3 # Should be at least the 3 we created
+    async with Model.get_session() as s:
+        # 1. Count all (may include data from other tests, filter if needed)
+        total_count = await Model.count(s)
+        assert total_count >= 3  # Should be at least the 3 we created
 
-    # 2. Count with a query
-    async with await Model.get_session() as s:
+        # 2. Count with a query
         query_count = Model.where(Model.name.like(f"query_%_{unique_id}"))
-        count_filtered = await Model.count(query=query_count, session=s)
+        count_filtered = await Model.count(s, query=query_count)
         assert count_filtered == 3
 
-    # 3. Count with query yielding no results
-    async with await Model.get_session() as s:
+        # 3. Count with query yielding no results
         query_count_none = Model.where(Model.name == "non_existent")
-        count_none = await Model.count(query=query_count_none, session=s)
+        count_none = await Model.count(s, query=query_count_none)
         assert count_none == 0
 
     # Cleanup
-    await Model.delete(inst1)
-    await Model.delete(inst2)
-    await Model.delete(inst3)
+    async with Model.get_session() as s:
+        await Model.delete(inst1, s)
+        await Model.delete(inst2, s)
+        await Model.delete(inst3, s)
+        await s.commit()
 
 
 @pytest.mark.asyncio
@@ -655,7 +597,8 @@ async def test_helpers_and_error_cases(unique_id, capsys, caplog):
 
     # --- Test dump_model error: JSON serialization ---
     # Mock to_jsonable_python to raise an error
-    instance_dump = await Model(name=f"dump_err_{unique_id}").save(commit=True)
+    async with Model.get_session() as s:
+        instance_dump = await Model(name=f"dump_err_{unique_id}").save(s, commit=True)
     with patch('achemy.activerecord.to_jsonable_python', side_effect=TypeError("Cannot serialize")):
         caplog.clear()
         # dump_model should catch the error and log it
@@ -667,7 +610,8 @@ async def test_helpers_and_error_cases(unique_id, capsys, caplog):
         assert "JSON-serializable" in caplog.text
 
     # Cleanup instance from dump_model test
-    await Model.delete(instance_dump)
+    async with Model.get_session() as s:
+        await Model.delete(instance_dump, s)
 
     # --- Test __columns__fields__ error: NotImplementedError ---
     # Define a mock type that raises error on python_type access
@@ -709,7 +653,8 @@ async def test_bulk_insert_simple(unique_id):
     name2 = f"bulk_simple2_{unique_id}"
     objs_to_insert = [Model(name=name1, value=10), Model(name=name2, value=20)]
 
-    inserted_objs = await Model.bulk_insert(objs_to_insert)
+    async with Model.get_session() as s:
+        inserted_objs = await Model.bulk_insert(objs_to_insert, s)
     assert inserted_objs is not None
     assert len(inserted_objs) == 2
     assert all(isinstance(obj, Model) for obj in inserted_objs)
@@ -717,16 +662,18 @@ async def test_bulk_insert_simple(unique_id):
     assert {obj.value for obj in inserted_objs} == {10, 20}
 
     # Verify in DB
-    db_obj1 = await Model.find_by(name=name1)
-    db_obj2 = await Model.find_by(name=name2)
-    assert db_obj1 is not None
-    assert db_obj2 is not None
-    assert db_obj1.value == 10
-    assert db_obj2.value == 20
+    async with Model.get_session() as s:
+        db_obj1 = await Model.find_by(s, name=name1)
+        db_obj2 = await Model.find_by(s, name=name2)
+        assert db_obj1 is not None
+        assert db_obj2 is not None
+        assert db_obj1.value == 10
+        assert db_obj2.value == 20
 
-    # Cleanup
-    await Model.delete(db_obj1)
-    await Model.delete(db_obj2)
+        # Cleanup
+        await Model.delete(db_obj1, s)
+        await Model.delete(db_obj2, s)
+        await s.commit()
 
 
 @pytest.mark.asyncio
@@ -738,13 +685,14 @@ async def test_bulk_insert_no_commit_and_explicit_session(unique_id):
     objs_to_insert = [Model(name=name1), Model(name=name2)]
 
     async with await Model.get_session() as s:
-        inserted_objs = await Model.bulk_insert(objs_to_insert, session=s, commit=False)
+        inserted_objs = await Model.bulk_insert(objs_to_insert, s, commit=False)
         assert inserted_objs is not None
         assert len(inserted_objs) == 2
 
         # Verify NOT in DB yet (via a different session)
-        assert await Model.find_by(name=name1) is None
-        assert await Model.find_by(name=name2) is None
+        async with Model.get_session() as s2:
+            assert await Model.find_by(s2, name=name1) is None
+            assert await Model.find_by(s2, name=name2) is None
 
         # Verify they are in the original session's pending state (optional check)
         # This check is a bit more involved as they are not full objects yet.
@@ -770,26 +718,29 @@ async def test_bulk_insert_no_returning(unique_id):
     name1 = f"bulk_noreturn_{unique_id}"
     objs_to_insert = [Model(name=name1)]
 
-    inserted_objs = await Model.bulk_insert(objs_to_insert, returning=False)
-    assert inserted_objs is None
+    async with Model.get_session() as s:
+        inserted_objs = await Model.bulk_insert(objs_to_insert, s, returning=False)
+        assert inserted_objs is None
 
-    # Verify in DB
-    db_obj1 = await Model.find_by(name=name1)
-    assert db_obj1 is not None
+        # Verify in DB
+        db_obj1 = await Model.find_by(s, name=name1)
+        assert db_obj1 is not None
 
-    # Cleanup
-    await Model.delete(db_obj1)
+        # Cleanup
+        await Model.delete(db_obj1, s)
+        await s.commit()
 
 
 @pytest.mark.asyncio
 async def test_bulk_insert_empty_list():
     """Test bulk_insert with an empty list of objects."""
     Model = SimpleModel
-    inserted_objs = await Model.bulk_insert([])
-    assert inserted_objs == []
+    async with Model.get_session() as s:
+        inserted_objs = await Model.bulk_insert([], s)
+        assert inserted_objs == []
 
-    inserted_objs_no_return = await Model.bulk_insert([], returning=False)
-    assert inserted_objs_no_return is None
+        inserted_objs_no_return = await Model.bulk_insert([], s, returning=False)
+        assert inserted_objs_no_return is None
 
 
 @pytest.mark.asyncio
@@ -799,7 +750,8 @@ async def test_bulk_insert_on_conflict_fail(unique_id):
     name_conflict = f"bulk_conflict_fail_{unique_id}"
 
     # Insert initial record
-    initial_obj = await Model(name=name_conflict, value=1).save(commit=True)
+    async with Model.get_session() as s:
+        initial_obj = await Model(name=name_conflict, value=1).save(s, commit=True)
     assert initial_obj is not None
 
     objs_to_insert = [
@@ -807,19 +759,21 @@ async def test_bulk_insert_on_conflict_fail(unique_id):
         Model(name=f"bulk_conflict_fail_ok_{unique_id}", value=3)
     ]
 
-    with pytest.raises(IntegrityError): # Or the specific DB driver error
-        await Model.bulk_insert(objs_to_insert, on_conflict="fail")
+    with pytest.raises(IntegrityError):  # Or the specific DB driver error
+        async with Model.get_session() as s:
+            await Model.bulk_insert(objs_to_insert, s, on_conflict="fail")
 
     # Verify the non-conflicting record was NOT inserted due to transaction rollback
-    assert await Model.find_by(name=f"bulk_conflict_fail_ok_{unique_id}") is None
-    # Verify initial object still exists with original value
-    db_initial = await Model.get(initial_obj.id)
-    assert db_initial is not None
-    assert db_initial.value == 1
+    async with Model.get_session() as s:
+        assert await Model.find_by(s, name=f"bulk_conflict_fail_ok_{unique_id}") is None
+        # Verify initial object still exists with original value
+        db_initial = await Model.get(s, initial_obj.id)
+        assert db_initial is not None
+        assert db_initial.value == 1
 
-
-    # Cleanup
-    await Model.delete(initial_obj)
+        # Cleanup
+        await Model.delete(db_initial, s)
+        await s.commit()
 
 
 @pytest.mark.asyncio
@@ -830,7 +784,8 @@ async def test_bulk_insert_on_conflict_nothing(unique_id):
     name_ok = f"bulk_conflict_nothing_ok_{unique_id}"
 
     # Insert initial record
-    initial_obj = await Model(name=name_conflict, value=100).save(commit=True)
+    async with Model.get_session() as s:
+        initial_obj = await Model(name=name_conflict, value=100).save(s, commit=True)
     assert initial_obj is not None
 
     objs_to_insert = [
@@ -839,7 +794,8 @@ async def test_bulk_insert_on_conflict_nothing(unique_id):
     ]
 
     # Use default index_elements (PK or unique constraint on 'name')
-    inserted_objs = await Model.bulk_insert(objs_to_insert, on_conflict="nothing")
+    async with Model.get_session() as s:
+        inserted_objs = await Model.bulk_insert(objs_to_insert, s, on_conflict="nothing")
 
     assert inserted_objs is not None
     assert len(inserted_objs) == 1 # Only the non-conflicting one is returned
@@ -847,18 +803,20 @@ async def test_bulk_insert_on_conflict_nothing(unique_id):
     assert inserted_objs[0].value == 300
 
     # Verify in DB
-    db_initial = await Model.get(initial_obj.id)
-    assert db_initial is not None
-    assert db_initial.name == name_conflict
-    assert db_initial.value == 100 # Original value should remain
+    async with Model.get_session() as s:
+        db_initial = await Model.get(s, initial_obj.id)
+        assert db_initial is not None
+        assert db_initial.name == name_conflict
+        assert db_initial.value == 100  # Original value should remain
 
-    db_ok = await Model.find_by(name=name_ok)
-    assert db_ok is not None
-    assert db_ok.value == 300
+        db_ok = await Model.find_by(s, name=name_ok)
+        assert db_ok is not None
+        assert db_ok.value == 300
 
-    # Cleanup
-    await Model.delete(initial_obj)
-    await Model.delete(db_ok)
+        # Cleanup
+        await Model.delete(db_initial, s)
+        await Model.delete(db_ok, s)
+        await s.commit()
 
 
 @pytest.mark.asyncio
@@ -869,7 +827,8 @@ async def test_bulk_insert_on_conflict_nothing_specific_index(unique_id):
     name_ok_idx = f"bulk_conflict_idx_ok_{unique_id}"
 
     # Insert initial record
-    initial_obj = await Model(name=name_conflict_idx, value=50).save(commit=True)
+    async with Model.get_session() as s:
+        initial_obj = await Model(name=name_conflict_idx, value=50).save(s, commit=True)
     assert initial_obj is not None
 
     objs_to_insert = [
@@ -878,11 +837,10 @@ async def test_bulk_insert_on_conflict_nothing_specific_index(unique_id):
     ]
 
     # Specify the unique constraint on 'name'
-    inserted_objs = await Model.bulk_insert(
-        objs_to_insert,
-        on_conflict="nothing",
-        on_conflict_index_elements=["name"] # Corresponds to uq_simple_models_activerecord_name
-    )
+    async with Model.get_session() as s:
+        inserted_objs = await Model.bulk_insert(
+            objs_to_insert, s, on_conflict="nothing", on_conflict_index_elements=["name"]
+        )
 
     assert inserted_objs is not None
     assert len(inserted_objs) == 1
@@ -890,18 +848,20 @@ async def test_bulk_insert_on_conflict_nothing_specific_index(unique_id):
     assert inserted_objs[0].value == 65
 
     # Verify in DB
-    db_initial = await Model.get(initial_obj.id)
-    assert db_initial is not None
-    assert db_initial.value == 50 # Unchanged
+    async with Model.get_session() as s:
+        db_initial = await Model.get(s, initial_obj.id)
+        assert db_initial is not None
+        assert db_initial.value == 50  # Unchanged
 
-    db_ok = await Model.find_by(name=name_ok_idx)
-    assert db_ok is not None
-    assert db_ok.value == 65
+        db_ok = await Model.find_by(s, name=name_ok_idx)
+        assert db_ok is not None
+        assert db_ok.value == 65
 
-    # Cleanup
-    await Model.delete(initial_obj)
-    if db_ok:
-        await Model.delete(db_ok)
+        # Cleanup
+        await Model.delete(db_initial, s)
+        if db_ok:
+            await Model.delete(db_ok, s)
+        await s.commit()
 
 
 @pytest.mark.asyncio
@@ -914,11 +874,11 @@ async def test_bulk_insert_with_fields(unique_id):
     # Create full model instances, but only 'name' should be inserted
     # 'value' has a default of None in the model, but we are not providing it via 'fields'
     objs_to_insert = [
-        Model(name=name1, value=1000), # value should be ignored
-        Model(name=name2, value=2000)  # value should be ignored
+        Model(name=name1, value=1000),  # value should be ignored
+        Model(name=name2, value=2000),  # value should be ignored
     ]
-
-    inserted_objs = await Model.bulk_insert(objs_to_insert, fields={"id", "name"})
+    async with Model.get_session() as s:
+        inserted_objs = await Model.bulk_insert(objs_to_insert, s, fields={"id", "name"})
     # Note: 'id' is often auto-generated by DB or SQLAlchemy before insert if not provided.
     # If 'id' is part of 'fields', its pre-generated value from the Python side would be used.
     # If PKMixin's default_factory is client-side, 'id' will be in dump_model().
@@ -928,18 +888,20 @@ async def test_bulk_insert_with_fields(unique_id):
     assert {obj.name for obj in inserted_objs} == {name1, name2}
 
     # Verify in DB
-    db_obj1 = await Model.find_by(name=name1)
-    db_obj2 = await Model.find_by(name=name2)
+    async with Model.get_session() as s:
+        db_obj1 = await Model.find_by(s, name=name1)
+        db_obj2 = await Model.find_by(s, name=name2)
 
-    assert db_obj1 is not None
-    assert db_obj1.value is None # Value should be its default (None) as it wasn't in 'fields'
+        assert db_obj1 is not None
+        assert db_obj1.value is None  # Value should be its default (None) as it wasn't in 'fields'
 
-    assert db_obj2 is not None
-    assert db_obj2.value is None # Value should be its default (None)
+        assert db_obj2 is not None
+        assert db_obj2.value is None  # Value should be its default (None)
 
-    # Cleanup
-    await Model.delete(db_obj1)
-    await Model.delete(db_obj2)
+        # Cleanup
+        await Model.delete(db_obj1, s)
+        await Model.delete(db_obj2, s)
+        await s.commit()
 
 
 @pytest.mark.asyncio
@@ -949,4 +911,5 @@ async def test_bulk_insert_invalid_on_conflict_value(unique_id):
     objs_to_insert = [Model(name=f"invalid_conflict_{unique_id}")]
 
     with pytest.raises(ValueError, match="Invalid on_conflict_strategy value: bogus_value"):
-        await Model.bulk_insert(objs_to_insert, on_conflict="bogus_value") # type: ignore
+        async with Model.get_session() as s:
+            await Model.bulk_insert(objs_to_insert, s, on_conflict="bogus_value")  # type: ignore
