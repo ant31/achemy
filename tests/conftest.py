@@ -3,7 +3,7 @@ import uuid
 import pytest
 from sqlalchemy.orm import DeclarativeBase, Mapped, MappedAsDataclass, mapped_column
 
-from achemy import ActiveRecord, Base, PKMixin, Schema, UpdateMixin
+from achemy import ActiveRecord, Base, Schema, UpdateMixin, UUIDPKMixin
 
 # --- Mock Model and Schema for test_schema.py ---
 
@@ -50,8 +50,8 @@ def mock_schema_class():
 class MockMixinBase(MappedAsDataclass, DeclarativeBase, ActiveRecord):
     pass
 
-class MockPKModel(MockMixinBase, PKMixin):
-    """Model using only PKMixin for testing."""
+class MockPKModel(MockMixinBase, UUIDPKMixin):
+    """Model using only UUIDPKMixin for testing."""
     __tablename__ = "mock_pk_models"
     name: Mapped[str] = mapped_column(init=True) # Add a data field
 
@@ -61,8 +61,8 @@ class MockUpdateModel(MockMixinBase, UpdateMixin):
     id: Mapped[int] = mapped_column(primary_key=True, init=False) # Need a PK
     name: Mapped[str] = mapped_column(init=True)
 
-class MockCombinedModel(MockMixinBase, PKMixin, UpdateMixin):
-    """Model using both PKMixin and UpdateMixin."""
+class MockCombinedModel(MockMixinBase, UUIDPKMixin, UpdateMixin):
+    """Model using both UUIDPKMixin and UpdateMixin."""
     __tablename__ = "mock_combined_models"
     name: Mapped[str] = mapped_column(init=True)
 

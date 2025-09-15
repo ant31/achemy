@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlalchemy.pool import NullPool
 
-from achemy import ActiveEngine, PostgreSQLConfigSchema
+from achemy import AchemyEngine, PostgreSQLConfigSchema
 
 # --- Fixtures ---
 
@@ -19,15 +19,15 @@ def minimal_config():
 
 @pytest.fixture
 def engine_manager(minimal_config):
-    """Provides an ActiveEngine instance initialized with minimal config."""
-    return ActiveEngine(config=minimal_config)
+    """Provides an AchemyEngine instance initialized with minimal config."""
+    return AchemyEngine(config=minimal_config)
 
 
 # --- Test Cases ---
 
 def test_engine_initialization(minimal_config):
-    """Test ActiveEngine initialization with valid config."""
-    engine = ActiveEngine(config=minimal_config, pool_size=5) # Pass extra kwarg
+    """Test AchemyEngine initialization with valid config."""
+    engine = AchemyEngine(config=minimal_config, pool_size=5) # Pass extra kwarg
     assert engine.config == minimal_config
     assert engine.engines == {}
     assert engine.sessions == {}
@@ -41,14 +41,14 @@ def test_engine_initialization(minimal_config):
 
 
 def test_engine_initialization_invalid_config():
-    """Test ActiveEngine initialization with invalid config type."""
+    """Test AchemyEngine initialization with invalid config type."""
     with pytest.raises(TypeError, match="config must be an instance of PostgreSQLConfigSchema"):
-        ActiveEngine(config={"db": "wrong_type"})
+        AchemyEngine(config={"db": "wrong_type"})
 
 
 def test_prep_engine_arguments_defaults(minimal_config):
     """Test _prep_engine_arguments applies defaults correctly."""
-    engine = ActiveEngine(config=minimal_config)
+    engine = AchemyEngine(config=minimal_config)
     kwargs = engine._prep_engine_arguments({})
     assert kwargs["poolclass"] is NullPool
     assert kwargs["echo"] is False
@@ -59,7 +59,7 @@ def test_prep_engine_arguments_defaults(minimal_config):
 
 def test_prep_engine_arguments_overrides(minimal_config):
     """Test _prep_engine_arguments respects explicit overrides."""
-    engine = ActiveEngine(
+    engine = AchemyEngine(
         config=minimal_config,
         echo=True, # Override echo
         connect_args={"timeout": 5, "server_settings": {"application_name": "test_app"}} # Override timeout
@@ -79,14 +79,14 @@ def test_prep_engine_arguments_overrides(minimal_config):
 def test_prep_engine_arguments_merges_config_kwargs(minimal_config):
     """Test _prep_engine_arguments merges kwargs from config object."""
     minimal_config.kwargs = {"pool_recycle": 3600} # Add kwarg to config
-    engine = ActiveEngine(config=minimal_config)
+    engine = AchemyEngine(config=minimal_config)
     kwargs = engine.engine_kwargs
     assert kwargs["pool_recycle"] == 3600
 
 
 def test_prep_engine_arguments_invalid_connect_args(minimal_config, caplog):
     """Test _prep_engine_arguments handles non-dict connect_args."""
-    engine = ActiveEngine(config=minimal_config, connect_args="not_a_dict")
+    engine = AchemyEngine(config=minimal_config, connect_args="not_a_dict")
     # Check that connect_args was reset to {} and default timeout applied
     assert isinstance(engine.engine_kwargs["connect_args"], dict)
     assert engine.engine_kwargs["connect_args"]["timeout"] == 10

@@ -2,17 +2,19 @@ import logging
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func
+from sqlalchemy import Integer, func
 from sqlalchemy.orm import Mapped, MappedAsDataclass, declared_attr, mapped_column
 
 logger = logging.getLogger(__name__)
 
 
-class PKMixin(MappedAsDataclass):
+class UUIDPKMixin(MappedAsDataclass):
     __abstract__ = True
     """
-    Primary key mixin combined with AlchemyModel functionality.
-    To be included in AlchemyModel subclasses only
+    Provides a standard UUID primary key column named `id`.
+
+    This mixin adds an `id` field of type `uuid.UUID` with a client-side default
+    factory and a database-side default function for generation.
     """
 
     @declared_attr
@@ -24,6 +26,17 @@ class PKMixin(MappedAsDataclass):
             kw_only=True,
             init=False,
         )
+
+
+class IntPKMixin(MappedAsDataclass):
+    __abstract__ = True
+    """
+    Provides a standard auto-incrementing integer primary key column named `id`.
+    """
+
+    @declared_attr
+    def id(cls) -> Mapped[int]:
+        return mapped_column(Integer, primary_key=True, init=False)
 
 
 class UpdateMixin(MappedAsDataclass):

@@ -11,7 +11,7 @@ Achemy is an asynchronous Python library that serves as a toolkit for SQLAlchemy
 -   **Explicit Session Management**: Achemy enforces safe, explicit session and transaction handling via SQLAlchemy's Unit of Work pattern.
 -   **Pydantic Integration**: Automatically generate Pydantic schemas from your SQLAlchemy models for rapid prototyping.
 -   **Bulk Operations**: Efficiently insert large numbers of records with support for conflict resolution.
--   **Helpful Mixins**: Common patterns like UUID primary keys (`PKMixin`) and timestamp tracking (`UpdateMixin`) are available as simple mixins.
+-   **Helpful Mixins**: Common patterns like UUID primary keys (`UUIDPKMixin`), integer primary keys (`IntPKMixin`), and timestamp tracking (`UpdateMixin`) are available as simple mixins.
 
 ## Installation
 
@@ -49,7 +49,7 @@ Initialize the `ActiveEngine` and define your models. It's good practice to crea
 # models.py
 from sqlalchemy.orm import Mapped, mapped_column
 
-from achemy import Base, PKMixin, UpdateMixin
+from achemy import Base, UpdateMixin, UUIDPKMixin
 
 
 # Create a common base for models.
@@ -58,7 +58,7 @@ class AppBase(Base):
     # You can add shared logic or configurations here
 
 
-class User(AppBase, PKMixin, UpdateMixin):
+class User(AppBase, UUIDPKMixin, UpdateMixin):
     """A user model with UUID primary key and timestamps."""
 
     __tablename__ = "users"
@@ -70,14 +70,14 @@ class User(AppBase, PKMixin, UpdateMixin):
 
 ### Step 3: Initialize and Use the Engine
 
-In your application's entry point, create the `ActiveEngine`. You will use this engine instance to create sessions for your database operations.
+In your application's entry point, create the `AchemyEngine`. You will use this engine instance to create sessions for your database operations.
 
 ```python
 # main.py
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from achemy import ActiveEngine
+from achemy import AchemyEngine
 from config import db_config
 from models import User
 
@@ -102,7 +102,7 @@ class UserRepository(BaseRepository[User]):
 
 # --- Application Entry Point ---
 # Create the engine instance. This should be a singleton in your application.
-engine = ActiveEngine(db_config)
+engine = AchemyEngine(db_config)
 
 # Get a session factory from the engine.
 _db_engine, session_factory = engine.session()
@@ -134,12 +134,12 @@ First, create a base model for your application. It does not need any special mi
 ```python
 # models.py
 # ...
-from achemy import Base, PKMixin, UpdateMixin
+from achemy import Base, UpdateMixin, UUIDPKMixin
 
 class AppBase(Base):
     __abstract__ = True
 
-class User(AppBase, PKMixin, UpdateMixin):
+class User(AppBase, UUIDPKMixin, UpdateMixin):
     # ...
 ```
 
@@ -188,12 +188,12 @@ async with session_factory() as session:
     new_user = await repo.create(name="Alice", email="alice@example.com")
 
     # --- Update ---
-    user_to_update = await repo.get_by_email("alice@example.com")
+    user_to_update = await repo.find_by(email="alice@example.com")
     if user_to_update:
-        repo.update(user_to_update, new_name="Alicia")
+        user_to_update.name = "Alicia"
 
     # --- Delete ---
-    user_to_delete = await repo.get_by_email("bob@example.com")
+    user_to_delete = await repo.find_by(email="bob@example.com")
     if user_to_delete:
         await repo.delete(user_to_delete)
 
@@ -251,7 +251,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from achemy import ActiveEngine
+from achemy import AchemyEngine
 from config import db_config  # Assuming you have a config.py
 from models import User  # Assuming you have a models.py
 
@@ -259,8 +259,8 @@ from models import User  # Assuming you have a models.py
 # --- FastAPI App Setup ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize ActiveEngine on startup
-    engine = ActiveEngine(db_config)
+    # Initialize AchemyEngine on startup
+    engine = AchemyEngine(db_config)
     _db_engine, session_factory = engine.session()
     # Store engine and session factory in the app's state
     app.state.engine = engine
@@ -407,7 +407,7 @@ async def get_user(user_id: uuid.UUID, repo: UserRepository = Depends(get_user_r
 Achemy models provide helper methods for data conversion:
 
 ```python
-# Assume 'session_factory' has been created from your ActiveEngine instance,
+# Assume 'session_factory' has been created from your AchemyEngine instance,
 # and you have a UserRepository as defined in previous examples.
 async with session_factory() as session:
     repo = UserRepository(session)
@@ -465,16 +465,17 @@ async def create_user_and_hometown(user_data: dict, city_data: dict):
 
 Achemy provides helpful mixins to reduce model definition boilerplate.
 
-*   **`PKMixin`**: Adds a standard `id: Mapped[uuid.UUID]` primary key.
+*   **`UUIDPKMixin`**: Adds a standard `id: Mapped[uuid.UUID]` primary key.
+*   **`IntPKMixin`**: Adds a standard `id: Mapped[int]` auto-incrementing primary key.
 *   **`UpdateMixin`**: Adds `created_at` and `updated_at` timestamp columns with automatic management. All query logic (e.g., finding the last modified record) should be implemented in your repository classes.
 
 ```python
 from sqlalchemy.orm import Mapped, mapped_column
 
-from achemy import Base, PKMixin, UpdateMixin
+from achemy import Base, UpdateMixin, UUIDPKMixin
 
 
-class MyModel(Base, PKMixin, UpdateMixin):
+class MyModel(Base, UUIDPKMixin, UpdateMixin):
     __tablename__ = "my_models"
     name: Mapped[str] = mapped_column()
 

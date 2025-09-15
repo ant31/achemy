@@ -24,21 +24,16 @@ def _generate_cache_key(data: dict[str, Any]) -> str:
     """Creates a stable SHA256 hash from a dictionary for use as a cache key."""
     if not data:
         return "default"
-    try:
-        # Using json.dumps with sort_keys=True ensures a canonical representation.
-        # default=str is a fallback for non-serializable types, which is better
-        # than failing but may not guarantee uniqueness for complex objects.
-        encoded = json.dumps(data, sort_keys=True, default=str).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
-    except TypeError as e:
-        logger.warning("Could not serialize kwargs to JSON for cache key, falling back to repr: %s", e)
-        # Fallback for truly un-serializable content, less reliable but won't crash.
-        return repr(sorted(data.items()))
+    # Using json.dumps with sort_keys=True ensures a canonical representation.
+    # This will raise a TypeError for non-serializable types, which is
+    # the desired behavior to enforce passing of simple, serializable kwargs.
+    encoded = json.dumps(data, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
-class ActiveEngine:
+class AchemyEngine:
     """
-    Manages asynchronous SQLAlchemy engines and sessions for ActiveAlchemy.
+    Manages asynchronous SQLAlchemy engines and sessions for Achemy.
 
     This class handles the creation and configuration of AsyncEngine and
     async_sessionmaker based on a provided configuration schema.
@@ -51,7 +46,7 @@ class ActiveEngine:
 
     def __init__(self, config: PostgreSQLConfigSchema, **kwargs: Any):
         """
-        Initializes the ActiveEngine.
+        Initializes the AchemyEngine.
 
         Args:
             config: The configuration object (e.g., PostgreSQLConfigSchema).
@@ -60,7 +55,7 @@ class ActiveEngine:
         if not isinstance(config, PostgreSQLConfigSchema):
             raise TypeError("config must be an instance of PostgreSQLConfigSchema")
         self.config = config
-        logger.debug(f"Initializing ActiveEngine with config: {config}")
+        logger.debug(f"Initializing AchemyEngine with config: {config}")
         self.engine_kwargs = self._prep_engine_arguments(kwargs)
         self.sessions = {}
         self.engines = {}

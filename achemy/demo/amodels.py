@@ -3,14 +3,14 @@ import uuid
 from sqlalchemy import Boolean, ForeignKey, Integer, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, MappedAsDataclass, mapped_column, relationship
 
-from achemy import AlchemyModel, PKMixin, UpdateMixin
+from achemy import AlchemyModel, UpdateMixin, UUIDPKMixin
 
 
 class ADemoBase(MappedAsDataclass, DeclarativeBase, AlchemyModel):
     pass
 
 
-class AResident(ADemoBase, PKMixin, UpdateMixin):
+class AResident(ADemoBase, UUIDPKMixin, UpdateMixin):
     """Resident model."""
 
     __tablename__ = "resident"
@@ -34,7 +34,7 @@ class AResident(ADemoBase, PKMixin, UpdateMixin):
     )
 
 
-class ACity(ADemoBase, PKMixin, UpdateMixin):
+class ACity(ADemoBase, UUIDPKMixin, UpdateMixin):
     """City model."""
 
     __tablename__ = "city"
@@ -67,7 +67,7 @@ class ACity(ADemoBase, PKMixin, UpdateMixin):
     __table_args__ = (UniqueConstraint("name", "country_id", name="uq_city_name_country"),)
 
 
-class ACountry(ADemoBase, PKMixin, UpdateMixin):
+class ACountry(ADemoBase, UUIDPKMixin, UpdateMixin):
     """Country model."""
 
     __tablename__ = "country"
@@ -86,7 +86,7 @@ class ACountry(ADemoBase, PKMixin, UpdateMixin):
     )
 
 
-class AResidentCity(ADemoBase, PKMixin, UpdateMixin):
+class AResidentCity(ADemoBase, UUIDPKMixin, UpdateMixin):
     """Association table between Resident and City."""
 
     __tablename__ = "resident_city"

@@ -6,7 +6,7 @@ import sqlalchemy
 from sqlalchemy import String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from achemy import ActiveEngine, ActiveRecord, Base, PostgreSQLConfigSchema
+from achemy import AchemyEngine, ActiveRecord, Base, PostgreSQLConfigSchema
 
 
 # Database configuration for tests
@@ -31,7 +31,7 @@ async def async_engine(db_config):
     db_config.driver = "asyncpg"
     db_config.params = {"ssl": "disable", "timeout": 5}
     print("Creating async engine...")
-    engine = ActiveEngine(db_config)
+    engine = AchemyEngine(db_config)
     ActiveRecord.set_engine(engine)
     print("Set Engine")
     yield engine
