@@ -360,6 +360,43 @@ new_user_instance = User.load(new_user_data)
 # new_user_instance is now a transient User object
 ```
 
+## Simplified Usage for Scripts and Tests
+
+For simple use cases like data migration scripts, automated tasks, or tests, managing the session factory and repository instances can be verbose. Achemy provides a convenient `engine.repository()` context manager that handles this for you.
+
+It automatically creates a session, provides a `BaseRepository` for a given model, and manages the transaction (commit on success, rollback on error).
+
+**Note:** This pattern is recommended for self-contained, short-lived tasks. For larger applications, especially web servers like FastAPI, the explicit session management pattern shown in the main examples is strongly recommended to ensure correct transaction scoping.
+
+```python
+# script.py
+import asyncio
+from config import db_config
+from models import User
+from achemy import AchemyEngine
+
+# Create a single, shared engine instance.
+engine = AchemyEngine(db_config)
+
+async def add_admin_user():
+    """A simple script to add a user if they don't exist."""
+    admin_email = "admin@example.com"
+
+    # Use the context manager to get a repository with a managed session.
+    async with engine.repository(User) as repo:
+        existing_user = await repo.find_by(email=admin_email)
+        if not existing_user:
+            print(f"Creating user: {admin_email}")
+            admin_user = User(name="Admin", email=admin_email, is_active=True)
+            await repo.save(admin_user)
+            # No need to call session.commit() - it's handled automatically.
+        else:
+            print(f"User {admin_email} already exists.")
+
+if __name__ == "__main__":
+    asyncio.run(add_admin_user())
+```
+
 ## Transactions and the Unit of Work
 
 Achemy embraces SQLAlchemy's **Unit of Work** pattern. The `AsyncSession` object tracks all changes to your models (creations, updates, deletions) within a single transactional scope.

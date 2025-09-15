@@ -5,6 +5,8 @@ Provides the asynchronous SQLAlchemy engine manager for ActiveAlchemy.
 import hashlib
 import json
 import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy.ext.asyncio import (
@@ -16,6 +18,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 from achemy.config import DatabaseConfig
+from achemy.repository import BaseRepository, T
 
 logger = logging.getLogger(__name__)
 
@@ -264,3 +267,28 @@ class AchemyEngine:
         self.engines.clear()
         self.sessions.clear()
         logger.info(f"Disposed {disposed_count} engine(s).")
+
+    @asynccontextmanager
+    async def repository(self, model_cls: type[T]) -> AsyncGenerator[BaseRepository[T], None]:
+        """
+        Provides a repository instance within a managed session context.
+
+        This convenience method is ideal for simple operations or scripts where
+        explicit session management is not required. It creates a session,
+        yields a generic repository, and handles commit/rollback automatically.
+
+        Args:
+            model_cls: The AlchemyModel subclass for the repository.
+
+        Yields:
+            A BaseRepository instance for the specified model.
+        """
+        _engine, session_factory = self.session()
+        async with session_factory() as session:
+            repo = BaseRepository(session, model_cls)
+            try:
+                yield repo
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
