@@ -79,7 +79,7 @@ class BaseRepository[T]:
         dialect_name = self.session.bind.dialect.name if self.session.bind else "unknown"
 
         if dialect_name == "postgresql":
-            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            from sqlalchemy.dialects.postgresql import insert as pg_insert  # noqa: PLC0415
 
             stmt = pg_insert(self._model_cls)
             if on_conflict == "nothing":
@@ -242,8 +242,7 @@ class BaseRepository[T]:
 
         if not filters:
             logger.warning(
-                "find_by() called with no valid filtering criteria. "
-                "This will return the first record in the table."
+                "find_by() called with no valid filtering criteria. This will return the first record in the table."
             )
             return await self.first()
 
