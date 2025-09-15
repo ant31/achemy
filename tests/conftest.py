@@ -3,8 +3,7 @@ import uuid
 import pytest
 from sqlalchemy.orm import DeclarativeBase, Mapped, MappedAsDataclass, mapped_column
 
-from achemy import ActiveRecord, Base, UpdateMixin, UUIDPKMixin
-
+from achemy import ActiveRecord, UpdateMixin, UUIDPKMixin
 
 # --- Mock Models and Fixtures for test_mixins.py ---
 
