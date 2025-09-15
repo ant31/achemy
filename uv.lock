@@ -13,14 +13,27 @@ version = "0.2.2"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
-    { name = "asyncpg" },
     { name = "pydantic" },
     { name = "sqlalchemy" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "asyncpg" },
+    { name = "rich" },
     { name = "typer" },
+]
+cli = [
+    { name = "rich" },
+    { name = "typer" },
+]
+pg = [
+    { name = "asyncpg" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "asyncpg" },
     { name = "black" },
     { name = "bump-my-version" },
     { name = "coverage" },
@@ -36,21 +49,29 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-ordering" },
     { name = "requests" },
+    { name = "rich" },
     { name = "ruff" },
+    { name = "typer" },
     { name = "types-requests" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.15.2,<2.0.0" },
-    { name = "asyncpg" },
+    { name = "asyncpg", marker = "extra == 'all'" },
+    { name = "asyncpg", marker = "extra == 'pg'" },
     { name = "pydantic", specifier = ">=2" },
+    { name = "rich", marker = "extra == 'all'" },
+    { name = "rich", marker = "extra == 'cli'" },
     { name = "sqlalchemy", specifier = ">=2" },
-    { name = "typer", specifier = ">=0.17.4" },
+    { name = "typer", marker = "extra == 'all'" },
+    { name = "typer", marker = "extra == 'cli'" },
 ]
+provides-extras = ["pg", "cli", "all"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "asyncpg" },
     { name = "black" },
     { name = "bump-my-version", specifier = ">=1.1.2,<2" },
     { name = "coverage" },
@@ -66,7 +87,9 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-ordering" },
     { name = "requests" },
+    { name = "rich" },
     { name = "ruff" },
+    { name = "typer" },
     { name = "types-requests" },
 ]
 
