@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_object_session
 from sqlalchemy.orm import Mapper
 
-from achemy.model import AlchemyModel
+from .model import AlchemyModel
 
 logger = logging.getLogger(__name__)
 

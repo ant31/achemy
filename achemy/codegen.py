@@ -3,7 +3,7 @@ import inspect
 import types
 from typing import Any, get_args, get_origin
 
-from achemy.model import AlchemyModel
+from achemy import AlchemyModel
 
 
 def _get_type_repr(t: Any) -> tuple[str, set[str]]:
