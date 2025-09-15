@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, MappedAsDataclass, mapped_column
 
 from achemy import AlchemyModel, UpdateMixin, UUIDPKMixin
@@ -25,8 +26,12 @@ class MockUpdateModel(MockMixinBase, UpdateMixin):
 
 class MockCombinedModel(MockMixinBase, UUIDPKMixin, UpdateMixin):
     """Model using both UUIDPKMixin and UpdateMixin."""
+
     __tablename__ = "mock_combined_models"
     name: Mapped[str] = mapped_column(init=True)
+    value: Mapped[int | None] = mapped_column(default=None, init=True)
+
+    __table_args__ = (UniqueConstraint("name", name="uq_mock_combined_models_name"),)
 
 
 @pytest.fixture(scope="session")
