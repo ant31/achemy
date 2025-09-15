@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, MappedAsDataclass, declared_attr, mapped_colu
 logger = logging.getLogger(__name__)
 
 
-class UUIDPKMixin(MappedAsDataclass):
+class UUIDPKMixin:
     __abstract__ = True
     """
     Provides a standard, portable UUID primary key column named `id`.
@@ -27,7 +27,7 @@ class UUIDPKMixin(MappedAsDataclass):
         )
 
 
-class PGUUIDPKMixin(MappedAsDataclass):
+class PGUUIDPKMixin:
     __abstract__ = True
     """
     Provides a UUID primary key with a PostgreSQL-specific server-side default.
@@ -47,7 +47,7 @@ class PGUUIDPKMixin(MappedAsDataclass):
         )
 
 
-class IntPKMixin(MappedAsDataclass):
+class IntPKMixin:
     __abstract__ = True
     """
     Provides a standard auto-incrementing integer primary key column named `id`.
@@ -58,7 +58,7 @@ class IntPKMixin(MappedAsDataclass):
         return mapped_column(Integer, primary_key=True, init=False)
 
 
-class UpdateMixin(MappedAsDataclass):
+class UpdateMixin:
     __abstract__ = True
     """
     Update/create timestamp tracking mixin combined with AlchemyModel functionality.
