@@ -4,4 +4,4 @@ from .model import AlchemyModel
 
 
 class Base(MappedAsDataclass, DeclarativeBase, AlchemyModel):
-    pass
+    __abstract__ = True
