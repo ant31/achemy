@@ -10,8 +10,6 @@ import pytest
 # Use the setup fixture defined in async/conftest.py
 # pytestmark = pytest.mark.usefixtures("setup_mixin_tests")
 # Note: Tests rely on unique_id for isolation instead of table cleaning.
-
-
 from achemy import BaseRepository
 
 

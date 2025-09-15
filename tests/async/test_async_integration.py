@@ -2,7 +2,6 @@
 Integration tests for asynchronous ActiveAlchemy
 """
 
-import asyncio
 import uuid
 
 import pytest
