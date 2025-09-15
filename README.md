@@ -402,18 +402,6 @@ async def get_user(user_id: uuid.UUID, repo: UserRepository = Depends(get_user_r
     # ...
 ```
 
-### Dynamic Generation (For Prototyping Only)
-
-For quick experiments or in environments where static type checking is not a concern, the original dynamic generation methods are still available.
-
-`User.pydantic_schema()` and `user_instance.to_pydantic()` will now raise a `UserWarning` to remind you that this approach is not recommended for production code due to the lack of static type safety.
-
-To run this example, you would need `fastapi` and `uvicorn`:
-```bash
-pip install fastapi "uvicorn[standard]"
-uvicorn api:app --reload
-```
-
 ## Data Handling & Serialization
 
 Achemy models provide helper methods for data conversion:
