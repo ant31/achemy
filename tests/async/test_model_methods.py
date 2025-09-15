@@ -82,7 +82,7 @@ async def test_instance_representation_and_data(async_engine, unique_id):
     assert data_dict_meta["name"] == instance_name
     assert "__metadata__" in data_dict_meta
     # The module name is dynamic based on the test file's location
-    assert data_dict_meta["__metadata__"]["model"] == "tests.async.test_model_methods:SimpleModel"
+    assert data_dict_meta["__metadata__"]["model"].endswith("test_model_methods:SimpleModel")
     assert data_dict_meta["__metadata__"]["table"] == "simple_models_activerecord"
 
     # 5. Test dump_model (should be JSON serializable)

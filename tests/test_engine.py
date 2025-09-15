@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlalchemy.pool import NullPool
 
 from achemy import AchemyEngine, DatabaseConfig
+from achemy.engine import _generate_cache_key
 
 # --- Fixtures ---
 
@@ -99,7 +100,7 @@ def test_get_engine_creation_and_caching(engine_manager):
     # First call - creates engine
     engine1 = engine_manager.engine()
     assert isinstance(engine1, AsyncEngine)
-    default_conf_key = str(sorted({}.items())) # '[]'
+    default_conf_key = _generate_cache_key({})
     assert engine_manager.engines["testdb_public_default"][default_conf_key] is engine1
 
     # Second call with same params - reuses engine
@@ -112,7 +113,7 @@ def test_get_engine_creation_and_caching(engine_manager):
     engine3 = engine_manager.engine(database="otherdb")
     assert isinstance(engine3, AsyncEngine)
     assert engine1 is not engine3
-    default_conf_key = str(sorted({}.items())) # '[]'
+    default_conf_key = _generate_cache_key({})
     assert engine_manager.engines["otherdb_public_default"][default_conf_key] is engine3
     assert len(engine_manager.engines) == 2
 
@@ -121,7 +122,7 @@ def test_get_engine_creation_and_caching(engine_manager):
     assert isinstance(engine4, AsyncEngine)
     assert engine1 is not engine4
     assert engine3 is not engine4
-    default_conf_key = str(sorted({}.items())) # '[]'
+    default_conf_key = _generate_cache_key({})
     assert engine_manager.engines["testdb_otherschema_default"][default_conf_key] is engine4
     assert len(engine_manager.engines) == 3
 
@@ -129,7 +130,7 @@ def test_get_engine_creation_and_caching(engine_manager):
     engine5 = engine_manager.engine(isolation_level="READ_COMMITTED")
     assert isinstance(engine5, AsyncEngine)
     assert engine1 is not engine5
-    default_conf_key = str(sorted({}.items())) # '[]'
+    default_conf_key = _generate_cache_key({})
     assert engine_manager.engines["testdb_public_READ_COMMITTED"][default_conf_key] is engine5
     assert len(engine_manager.engines) == 4
 
@@ -137,7 +138,7 @@ def test_get_engine_creation_and_caching(engine_manager):
     engine6 = engine_manager.engine(pool_pre_ping=True)
     assert isinstance(engine6, AsyncEngine)
     assert engine1 is not engine6
-    engine_conf_key = str(sorted({"pool_pre_ping": True}.items()))
+    engine_conf_key = _generate_cache_key({"pool_pre_ping": True})
     assert engine_manager.engines["testdb_public_default"][engine_conf_key] is engine6
     assert len(engine_manager.engines["testdb_public_default"]) == 2 # Now two configs for this key
 
@@ -159,8 +160,8 @@ def test_get_session_creation_and_caching(engine_manager):
     engine1, sm1 = engine_manager.session()
     assert isinstance(engine1, AsyncEngine)
     assert isinstance(sm1, async_sessionmaker)
-    default_engine_conf_key = str(sorted({}.items())) # '[]'
-    default_session_conf_key = str(sorted({}.items())) # '[]'
+    default_engine_conf_key = _generate_cache_key({})
+    default_session_conf_key = _generate_cache_key({})
     assert engine_manager.engines["testdb_public_default"][default_engine_conf_key] is engine1
     session_key = f"{default_engine_conf_key}_{default_session_conf_key}"
     assert engine_manager.sessions["testdb_public_default"][session_key] is sm1
@@ -177,8 +178,8 @@ def test_get_session_creation_and_caching(engine_manager):
     assert engine1 is engine3 # Engine reused
     assert sm1 is not sm3 # New sessionmaker
     assert isinstance(sm3, async_sessionmaker)
-    default_engine_conf_key = str(sorted({}.items())) # '[]'
-    session_conf_key = str(sorted({"expire_on_commit": True}.items()))
+    default_engine_conf_key = _generate_cache_key({})
+    session_conf_key = _generate_cache_key({"expire_on_commit": True})
     new_session_key = f"{default_engine_conf_key}_{session_conf_key}"
     assert engine_manager.sessions["testdb_public_default"][new_session_key] is sm3
     assert len(engine_manager.sessions["testdb_public_default"]) == 2
@@ -188,8 +189,8 @@ def test_get_session_creation_and_caching(engine_manager):
     assert engine1 is not engine4 # New engine
     assert sm1 is not sm4 # New sessionmaker
     assert sm3 is not sm4
-    engine_conf_key = str(sorted({"pool_pre_ping": True}.items()))
-    default_session_conf_key = str(sorted({}.items())) # '[]'
+    engine_conf_key = _generate_cache_key({"pool_pre_ping": True})
+    default_session_conf_key = _generate_cache_key({})
     new_engine_key = "testdb_public_default" # Base key remains the same
     new_session_key_engine = f"{engine_conf_key}_{default_session_conf_key}"
     assert engine_manager.engines[new_engine_key][engine_conf_key] is engine4

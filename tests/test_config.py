@@ -8,7 +8,7 @@ def test_config():
     assert PostgresConfig.port == 5434
     assert PostgresConfig.password == "achemy"
     assert PostgresConfig.host == "localhost"
-    assert PostgresConfig.params == {"sslmode": "disable"}
+    assert PostgresConfig.params == {}
     assert PostgresConfig.driver == "asyncpg"
     #``assert PostgresConfig.async_driver == "asyncpg"
     assert PostgresConfig.connect_timeout == 10
@@ -17,11 +17,11 @@ def test_config():
     assert PostgresConfig.default_schema == "public"
 
 
-    assert PostgresConfig.uri() == "postgresql+asyncpg://achemy:achemy@localhost:5434/achemy-test?ssl=disable"
+    assert PostgresConfig.uri() == "postgresql+asyncpg://achemy:achemy@localhost:5434/achemy-test?sslmode=disable"
 
     PostgresConfig.port = 5435
-    assert PostgresConfig.uri() == "postgresql+asyncpg://achemy:achemy@localhost:5435/achemy-test?ssl=disable"
+    assert PostgresConfig.uri() == "postgresql+asyncpg://achemy:achemy@localhost:5435/achemy-test?sslmode=disable"
     PostgresConfig. params = {"sslmode": "require"}
-    assert PostgresConfig.uri() == "postgresql+asyncpg://achemy:achemy@localhost:5435/achemy-test?ssl=require"
+    assert PostgresConfig.uri() == "postgresql+asyncpg://achemy:achemy@localhost:5435/achemy-test?sslmode=require"
     PostgresConfig.driver = "asyncpg-other"
     assert PostgresConfig.uri() == "postgresql+asyncpg-other://achemy:achemy@localhost:5435/achemy-test?sslmode=require"

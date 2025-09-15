@@ -75,7 +75,7 @@ def test_model():
 async def setup_select(async_engine, test_model): # Removed aclean_tables
     """Set up select tests"""
     print("setup_select")
-    TestModel.set_engine(async_engine)
+    # TestModel.set_engine(async_engine)  # No longer needed with repository pattern
 
     # Clean up
     async with async_engine.engine().begin() as conn:
