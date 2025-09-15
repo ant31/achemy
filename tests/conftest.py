@@ -3,13 +3,13 @@ import uuid
 import pytest
 from sqlalchemy.orm import DeclarativeBase, Mapped, MappedAsDataclass, mapped_column
 
-from achemy import ActiveRecord, UpdateMixin, UUIDPKMixin
+from achemy import AlchemyModel, UpdateMixin, UUIDPKMixin
 
 # --- Mock Models and Fixtures for test_mixins.py ---
 
 
 # Base class for mixin test models, following the pattern in demo models
-class MockMixinBase(MappedAsDataclass, DeclarativeBase, ActiveRecord):
+class MockMixinBase(MappedAsDataclass, DeclarativeBase, AlchemyModel):
     pass
 
 class MockPKModel(MockMixinBase, UUIDPKMixin):

@@ -6,7 +6,7 @@ import sqlalchemy
 from sqlalchemy import String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from achemy import AchemyEngine, ActiveRecord, Base, PostgreSQLConfigSchema
+from achemy import AchemyEngine, Base, PostgreSQLConfigSchema
 
 
 # Database configuration for tests
@@ -32,8 +32,8 @@ async def async_engine(db_config):
     db_config.params = {"ssl": "disable", "timeout": 5}
     print("Creating async engine...")
     engine = AchemyEngine(db_config)
-    ActiveRecord.set_engine(engine)
-    print("Set Engine")
+    # ActiveRecord has been removed; the engine is now passed to tests
+    # via the 'async_engine' fixture where needed.
     yield engine
 
     print("\nDisposing async engines...") # Add print for debugging test runs
@@ -110,7 +110,8 @@ async def aclean_tables(async_engine, acreate_tables): # Depend on acreate_table
     print("aclean: Cleaning tables before session...")
     # Use the engine manager provided by the fixture
     # Get a session using the globally set engine manager
-    async with ActiveRecord.get_session() as session:
+    _db_engine, session_factory = async_engine.session()
+    async with session_factory() as session:
         print("Cleaning tables...")
         async with session.begin(): # Use a transaction for cleanup
             print("Cleaning tables in transaction...")
@@ -129,7 +130,8 @@ async def aclean_tables(async_engine, acreate_tables): # Depend on acreate_table
 
     # Add cleanup *after* the session as well to ensure clean state
     print("aclean: Cleaning tables post-session...")
-    async with ActiveRecord.get_session() as session:
+    _db_engine, session_factory = async_engine.session()
+    async with session_factory() as session:
         print("Cleaning tables post-session...")
         async with session.begin():
             print("Cleaning tables post-session in transaction...")
