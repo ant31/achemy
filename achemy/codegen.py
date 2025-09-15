@@ -1,6 +1,8 @@
 import importlib
 import inspect
+import sys
 import types
+from pathlib import Path
 from typing import Any, get_args, get_origin
 
 from achemy.model import AlchemyModel
@@ -117,6 +119,11 @@ def generate_schemas_from_module_code(module_path: str) -> str:
     Returns:
         A string containing the generated Python code for all discovered schemas.
     """
+    # Add CWD to path to allow for local module imports.
+    cwd = str(Path.cwd())
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
     try:
         module = importlib.import_module(module_path)
     except ImportError as e:
@@ -131,7 +138,7 @@ def generate_schemas_from_module_code(module_path: str) -> str:
     model_classes = [
         obj
         for _, obj in inspect.getmembers(module, inspect.isclass)
-        if issubclass(obj, AlchemyModel) and obj is not AlchemyModel and not getattr(obj, "__abstract__", False)
+        if hasattr(obj, "__mapper__") and hasattr(obj, "pydantic_schema") and not getattr(obj, "__abstract__", False)
     ]
 
     if not model_classes:
