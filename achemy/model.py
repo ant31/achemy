@@ -1,13 +1,10 @@
 import logging
-import warnings
 from typing import Any, ClassVar, Self
 
 from pydantic_core import to_jsonable_python
 from sqlalchemy import FromClause
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import ColumnProperty, Mapper
-
-from achemy.schema import Schema
 
 logger = logging.getLogger(__name__)
 
