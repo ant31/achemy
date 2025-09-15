@@ -157,12 +157,11 @@ For high-performance inserts, `bulk_insert` can be exposed through your reposito
 # In your UserRepository:
 async def bulk_create(self, users_data: list[dict]) -> list[User]:
     """Efficiently creates multiple users, skipping conflicts on email."""
-    users = [User(**data) for data in users_data]
     inserted_users = await self.bulk_insert(
-        users,
+        users_data,
         on_conflict="nothing",
-        on_conflict_index_elements=["email"], # Assumes unique constraint on email
-        commit=False, # The business logic will handle the commit
+        on_conflict_index_elements=["email"],  # Assumes unique constraint on email
+        commit=False,  # The business logic will handle the commit
     )
     return inserted_users
 

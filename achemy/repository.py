@@ -61,20 +61,17 @@ class BaseRepository[T]:
 
     async def bulk_insert(
         self,
-        objs: list[T],
+        values: list[dict[str, Any]],
         commit: bool = True,
         on_conflict: Literal["fail", "nothing"] = "fail",
         on_conflict_index_elements: list[str] | None = None,
-        fields: set[str] | None = None,
         returning: bool = True,
     ) -> Sequence[T] | None:
         if not hasattr(self._model_cls, "__table__"):
             raise TypeError(f"Class {self._model_cls.__name__} does not have a __table__ defined.")
 
-        if not objs:
+        if not values:
             return [] if returning else None
-
-        values = [o.dump_model(with_meta=False, fields=fields) for o in objs]
 
         dialect_name = self.session.bind.dialect.name if self.session.bind else "unknown"
 
@@ -92,23 +89,18 @@ class BaseRepository[T]:
             if on_conflict != "fail":
                 raise NotImplementedError(f"on_conflict='{on_conflict}' is not supported for dialect '{dialect_name}'.")
 
-        insert_stmt = stmt.values(values)
         if returning:
-            insert_stmt = insert_stmt.returning(self._model_cls)
+            stmt = stmt.returning(self._model_cls)
 
         try:
-            result = await self._execute_and_commit_bulk_statement(insert_stmt, commit)
+            result = await self.session.execute(stmt, values)
+            if commit:
+                await self.session.commit()
             res = result.scalars().all() if returning and result else None
             return res
         except SQLAlchemyError as e:
             logger.error(f"Error during bulk_insert for {self._model_cls.__name__}: {e}", exc_info=True)
             raise e
-
-    async def _execute_and_commit_bulk_statement(self, stmt: Any, commit_flag: bool) -> Any:
-        result = await self.session.execute(stmt)
-        if commit_flag:
-            await self.session.commit()
-        return result
 
     async def add_all(self, objs: list[T], commit: bool = True) -> Sequence[T]:
         if not objs:
