@@ -2,6 +2,25 @@
 
 Achemy is an asynchronous Python library that serves as a toolkit for SQLAlchemy 2.0+, designed to streamline database interactions and promote best practices like the Repository pattern. It provides a powerful base model, a fluent query-building interface, and seamless Pydantic integration.
 
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Getting Started: A Complete Example](#getting-started-a-complete-example)
+  - [Step 1: Configuration](#step-1-configuration)
+  - [Step 2: Engine and Model Setup](#step-2-engine-and-model-setup)
+  - [Step 3: Define a Repository](#step-3-define-a-repository)
+  - [Step 4: Use the Repository in Your Application](#step-4-use-the-repository-in-your-application)
+- [Bulk Operations](#bulk-operations)
+- [Pydantic Schemas & FastAPI Integration](#pydantic-schemas--fastapi-integration)
+  - [Full FastAPI Example](#full-fastapi-example)
+  - [Generating Schemas with the CLI](#generating-schemas-with-the-cli)
+- [Data Handling & Serialization](#data-handling--serialization)
+- [Simplified Usage for Scripts and Tests](#simplified-usage-for-scripts-and-tests)
+- [Transactions and the Unit of Work](#transactions-and-the-unit-of-work)
+- [Mixins](#mixins)
+- [Examples](#examples)
+
 ## Features
 
 -   **Standardized Foundation**: Homogenize database configuration and data access patterns across multiple projects, reducing boilerplate and improving consistency.
