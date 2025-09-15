@@ -3,7 +3,7 @@ Tests for achemy/repository.py
 """
 import pytest
 from sqlalchemy.exc import IntegrityError
-from tests.conftest import MockCombinedModel
+from tests.models import MockCombinedModel
 
 from achemy import BaseRepository
 
