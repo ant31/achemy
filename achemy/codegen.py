@@ -138,7 +138,7 @@ def generate_schemas_from_module_code(module_path: str) -> str:
     model_classes = [
         obj
         for _, obj in inspect.getmembers(module, inspect.isclass)
-        if hasattr(obj, "__mapper__") and hasattr(obj, "pydantic_schema") and not getattr(obj, "__abstract__", False)
+        if hasattr(obj, "__tablename__") and hasattr(obj, "pydantic_schema") and not getattr(obj, "__abstract__", False)
     ]
 
     if not model_classes:
