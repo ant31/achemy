@@ -1,5 +1,5 @@
 import logging
-from typing import Any, ClassVar, Self, Type
+from typing import Any, ClassVar, Self
 
 from pydantic import BaseModel, create_model
 from pydantic_core import to_jsonable_python
@@ -201,7 +201,7 @@ class AlchemyModel(AsyncAttrs):
             raise
 
     @classmethod
-    def pydantic_schema(cls) -> Type[BaseModel]:
+    def pydantic_schema(cls) -> type[BaseModel]:
         """
         Dynamically creates a Pydantic schema from the SQLAlchemy model.
 
