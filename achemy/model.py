@@ -1,6 +1,7 @@
 import logging
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, Self, Type
 
+from pydantic import BaseModel, create_model
 from pydantic_core import to_jsonable_python
 from sqlalchemy import FromClause
 from sqlalchemy.ext.asyncio import AsyncAttrs
@@ -198,4 +199,57 @@ class AlchemyModel(AsyncAttrs):
             logger.error(f"Failed to instantiate {cls.__name__} from data: {e}", exc_info=True)
             # Re-raise to signal that instantiation failed, which is a critical error.
             raise
+
+    @classmethod
+    def pydantic_schema(cls) -> Type[BaseModel]:
+        """
+        Dynamically creates a Pydantic schema from the SQLAlchemy model.
+
+        This method inspects the model's columns and generates a Pydantic
+        model that can be used for serialization (a "read" schema).
+
+        Returns:
+            A Pydantic BaseModel class representing the schema.
+        """
+        if not hasattr(cls, "__mapper__"):
+            raise ValueError(f"Cannot create schema: Class {cls.__name__} is not mapped by SQLAlchemy.")
+
+        fields = {}
+        # Use mapper to iterate over all mapped columns, including those from mixins
+        for prop in cls.__mapper__.iterate_properties:
+            if isinstance(prop, ColumnProperty):
+                # A ColumnProperty can have multiple columns (e.g., composite keys)
+                # but we'll focus on the first/primary one for simplicity.
+                if not prop.columns:
+                    continue
+                col = prop.columns[0]
+
+                # Get python type
+                py_type: Any = Any
+                try:
+                    py_type = col.type.python_type
+                except NotImplementedError:
+                    logger.warning(
+                        f"Could not determine Python type for column '{col.name}' of type {col.type}, using Any."
+                    )
+
+                # Handle optionality
+                field_type = py_type
+                if col.nullable:
+                    field_type = py_type | None
+
+                # Handle default value
+                default_value = ...  # Pydantic's marker for required
+                if col.default is not None and hasattr(col.default, "arg"):
+                    # Only use scalar defaults that are representable
+                    if col.default.is_scalar:
+                        default_value = col.default.arg
+                elif col.nullable:
+                    default_value = None
+
+                fields[prop.key] = (field_type, default_value)
+
+        schema_name = f"{cls.__name__}Schema"
+        # Create the Pydantic model dynamically
+        return create_model(schema_name, **fields)
 
