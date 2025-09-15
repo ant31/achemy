@@ -3,44 +3,7 @@ import uuid
 import pytest
 from sqlalchemy.orm import DeclarativeBase, Mapped, MappedAsDataclass, mapped_column
 
-from achemy import ActiveRecord, Base, Schema, UpdateMixin, UUIDPKMixin
-
-# --- Mock Model and Schema for test_schema.py ---
-
-class MockModel(Base):
-    """A simple mock ActiveRecord model for testing schemas."""
-    __tablename__ = "mock_models" # Required by Base/ActiveRecord
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column()
-    value: Mapped[int | None] = mapped_column(default=None)
-
-    # Add __init__ if not using MappedAsDataclass or similar helpers
-    # Base doesn't inherit MappedAsDataclass by default
-    def __init__(self, name: str, value: int | None = None, **kw):
-        super().__init__(**kw) # Pass extra kwargs to SQLAlchemy internals if needed
-        self.name = name
-        self.value = value
-
-
-class MockSchema(Schema[MockModel]):
-    """Schema corresponding to MockModel."""
-    name: str
-    value: int | None = None
-    # We don't include 'id' here typically, as it's often DB-generated
-
-
-@pytest.fixture(scope="session") # Use session scope as the class definition doesn't change
-def mock_model_class():
-    """Provides the MockModel class."""
-    return MockModel
-
-@pytest.fixture(scope="session") # Use session scope as the base class definition doesn't change
-def mock_schema_class():
-    """Provides the MockSchema class."""
-    # Return a fresh copy or the class itself.
-    # Be mindful if tests modify the class directly.
-    return MockSchema
+from achemy import ActiveRecord, Base, UpdateMixin, UUIDPKMixin
 
 
 # --- Mock Models and Fixtures for test_mixins.py ---
