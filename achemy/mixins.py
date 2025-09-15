@@ -31,7 +31,9 @@ class PKMixin(MappedAsDataclass):
     @classmethod
     async def find(cls, session: AsyncSession, pk_uuid: uuid.UUID) -> Self | None:
         """Return the instance with the given UUID primary key."""
-        # Uses the optimized session.get() method inherited via AlchemyModel.get
+        # This method requires the QueryMixin to be included in the model.
+        if not hasattr(cls, "get"):
+            raise TypeError(f"The .find() method requires {cls.__name__} to inherit from QueryMixin.")
         return await cls.get(session, pk_uuid)
 
 
@@ -53,6 +55,8 @@ class UpdateMixin(MappedAsDataclass):
     @classmethod
     async def last_modified(cls, session: AsyncSession) -> Self | None:
         """Returns the most recently updated instance."""
+        if not hasattr(cls, "select"):
+            raise TypeError(f"The .last_modified() method requires {cls.__name__} to inherit from QueryMixin.")
         logger.debug(f"Finding last modified record for {cls.__name__}")
         query = cls.select().order_by(cls.updated_at.desc())
         return await cls.first(session=session, query=query)  # Use first() with the query
@@ -60,6 +64,8 @@ class UpdateMixin(MappedAsDataclass):
     @classmethod
     async def last_created(cls, session: AsyncSession) -> Self | None:
         """Returns the most recently created instance."""
+        if not hasattr(cls, "select"):
+            raise TypeError(f"The .last_created() method requires {cls.__name__} to inherit from QueryMixin.")
         logger.debug(f"Finding last created record for {cls.__name__}")
         query = cls.select().order_by(cls.created_at.desc())
         return await cls.first(session=session, query=query)
@@ -67,6 +73,8 @@ class UpdateMixin(MappedAsDataclass):
     @classmethod
     async def first_created(cls, session: AsyncSession) -> Self | None:
         """Returns the first created instance."""
+        if not hasattr(cls, "select"):
+            raise TypeError(f"The .first_created() method requires {cls.__name__} to inherit from QueryMixin.")
         logger.debug(f"Finding first created record for {cls.__name__}")
         query = cls.select().order_by(cls.created_at.asc())
         return await cls.first(session=session, query=query)
@@ -86,6 +94,8 @@ class UpdateMixin(MappedAsDataclass):
         Returns:
             A sequence of model instances modified after the specified date.
         """
+        if not hasattr(cls, "select"):
+            raise TypeError(f"The .get_since() method requires {cls.__name__} to inherit from QueryMixin.")
         if query is None:
             query = cls.select()
 

@@ -5,8 +5,8 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.fields import FieldInfo
 
 if TYPE_CHECKING:
-    from .activerecord import AlchemyModel
     from .base import Base
+    from .model import AlchemyModel
 
 logger = logging.getLogger(__name__)
 
