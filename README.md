@@ -4,6 +4,7 @@ Achemy is an asynchronous Python library that serves as a toolkit for SQLAlchemy
 
 ## Features
 
+-   **Standardized Foundation**: Homogenize database configuration and data access patterns across multiple projects, reducing boilerplate and improving consistency.
 -   **Repository Pattern Support**: A generic `BaseRepository` provides common data access logic, encouraging robust and testable data access layers.
 -   **Fluent Query Interface**: Chainable, repository-centric methods for building complex queries (`repo.where(...)`).
 -   **Async First**: Built from the ground up for modern asynchronous applications with `async/await`.
