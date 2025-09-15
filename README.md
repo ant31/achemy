@@ -29,9 +29,9 @@ Achemy uses a Pydantic schema to manage database connection details.
 
 ```python
 # config.py
-from achemy.config import PostgreSQLConfigSchema
+from achemy.config import DatabaseConfig
 
-db_config = PostgreSQLConfigSchema(
+db_config = DatabaseConfig(
     db="mydatabase",
     user="myuser",
     password="mypassword",
@@ -301,7 +301,7 @@ async def get_user(user_id: uuid.UUID, repo: UserRepository = Depends(get_user_r
 
 ### Generating Schemas with the CLI
 
-Achemy includes a command-line tool to automatically generate static, type-safe Pydantic models from your `AlchemyModel` definitions. This is the recommended first step for integrating your database models with an API.
+Achemy includes a command-line tool to automatically generate static, type-safe Pydantic models from your model definitions (those inheriting from `achemy.Base`). This is the recommended first step for integrating your database models with an API.
 
 #### Step 1: Install Typer
 
@@ -319,7 +319,7 @@ From your project's root directory, run the `generate-schemas` command. You need
 python -m achemy.cli generate-schemas your_app.models --output your_app/schemas.py
 ```
 
-This command will inspect `your_app/models.py`, find all `AlchemyModel` subclasses, and generate a `your_app/schemas.py` file containing corresponding Pydantic `BaseModel` classes.
+This command will inspect `your_app/models.py`, find all models inheriting from `achemy.Base`, and generate a `your_app/schemas.py` file containing corresponding Pydantic `BaseModel` classes.
 
 #### Step 3: Use the Generated Schemas
 
