@@ -1,12 +1,12 @@
 import sys
 from pathlib import Path
-from typer.testing import CliRunner
 
 import pytest
+from tests.models import MockCombinedModel
+from typer.testing import CliRunner
+
 from achemy.cli import app
 from achemy.codegen import generate_pydantic_code, generate_schemas_from_module_code
-from tests.models import MockCombinedModel
-
 
 runner = CliRunner()
 
