@@ -16,6 +16,6 @@ __all__ = [
     "IntPKMixin",
     "PostgreSQLConfigSchema",
     "Schema",
-    "UpdateMixin",
     "UUIDPKMixin",
+    "UpdateMixin",
 ]

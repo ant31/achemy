@@ -1,4 +1,3 @@
-from types import NoneType  # Import NoneType
 
 import pytest
 from pydantic import ValidationError

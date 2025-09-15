@@ -1,8 +1,7 @@
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
+from typing import TYPE_CHECKING, ClassVar, TypeVar
 
 from pydantic import BaseModel, ConfigDict
-from pydantic.fields import FieldInfo
 
 if TYPE_CHECKING:
     from .base import Base
