@@ -43,7 +43,7 @@ See `achemy/config.py` for more options.
 
 ### Step 2: Engine and Model Setup
 
-Initialize the `ActiveEngine` and define your models. It's good practice to create a common base class for your models.
+Initialize the `AchemyEngine` and define your models. It's good practice to create a common base class for your models.
 
 ```python
 # models.py
@@ -68,84 +68,11 @@ class User(AppBase, UUIDPKMixin, UpdateMixin):
     is_active: Mapped[bool] = mapped_column(default=True)
 ```
 
-### Step 3: Initialize and Use the Engine
+### Step 3: Define a Repository
 
-In your application's entry point, create the `AchemyEngine`. You will use this engine instance to create sessions for your database operations.
+Achemy is designed to support the **Repository Pattern**. Repositories handle all database interactions, keeping your business logic clean and your data access logic centralized and testable.
 
-```python
-# main.py
-import asyncio
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from achemy import AchemyEngine
-from config import db_config
-from models import User
-
-# --- Repository for Data Access ---
-from achemy import BaseRepository
-
-class UserRepository(BaseRepository[User]):
-    def __init__(self, session: AsyncSession):
-        super().__init__(session, User)
-
-    async def create(self, name: str, email: str) -> User:
-        """Creates and saves a new user."""
-        new_user = User(name=name, email=email)
-        # BaseRepository provides the .save() method
-        await self.save(new_user)
-        return new_user
-
-    async def get_by_email(self, email: str) -> User | None:
-        """Finds a user by their email."""
-        # BaseRepository provides the .find_by() method
-        return await self.find_by(email=email)
-
-# --- Application Entry Point ---
-# Create the engine instance. This should be a singleton in your application.
-engine = AchemyEngine(db_config)
-
-# Get a session factory from the engine.
-_db_engine, session_factory = engine.session()
-
-async def main():
-    # Business logic is responsible for the session and transaction.
-    async with session_factory() as session:
-        # Business logic interacts with the repository, not the models directly.
-        repo = UserRepository(session)
-
-        user = await repo.get_by_email("alice@example.com")
-        if not user:
-            user = await repo.create(name="Alice", email="alice@example.com")
-            await session.commit()
-            print(f"Created user: {user}")
-        else:
-            print(f"Found user: {user}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-## Using the Repository Pattern
-
-Achemy is designed to support the **Repository Pattern**, which separates your business logic from the data access logic. Your models remain simple data containers, while repositories handle all database interactions.
-
-First, create a base model for your application. It does not need any special mixins for querying.
-
-```python
-# models.py
-# ...
-from achemy import Base, UpdateMixin, UUIDPKMixin
-
-class AppBase(Base):
-    __abstract__ = True
-
-class User(AppBase, UUIDPKMixin, UpdateMixin):
-    # ...
-```
-
-### Example: `UserRepository`
-
-Here is a repository for the `User` model. By inheriting from `BaseRepository`, it gains a suite of helpful data access methods (`.add`, `.get`, `.find_by`, `.all`, `.delete`, etc.). You can then add your own business-specific query methods.
+Create a repository for your `User` model. By inheriting from `BaseRepository`, it automatically gains a suite of helpful data access methods (`.get`, `.find_by`, `.all`, `.delete`, etc.).
 
 ```python
 # repositories.py
@@ -157,49 +84,69 @@ class UserRepository(BaseRepository[User]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, User)
 
-    async def create(self, name: str, email: str) -> User:
-        """Creates a new user instance and adds it to the session."""
-        user = User(name=name, email=email)
-        await self.add(user) # .add() is inherited
-        return user
-
     async def get_active_users(self) -> list[User]:
-        """Returns all active users."""
+        """Returns all active users, ordered by name."""
         query = self.where(User.is_active == True).order_by(User.name)
         return await self.all(query=query)
 
-    # Note: Methods like get_by_id, get_by_email, and delete are often
-    # not needed, as you can directly use the inherited methods:
-    # repo.get(user_id)
-    # repo.find_by(email=email)
-    # repo.delete(user)
+    # Note: Methods like get by ID or find by a specific field are often
+    # not needed, as you can directly use the inherited methods from your code:
+    # user = await repo.get(user_id)
+    # user = await repo.find_by(email=email)
 ```
 
-### Using the Repository in Business Logic
+### Step 4: Use the Repository in Your Application
 
-Your application or business logic controls the session and transaction. It creates a repository instance and calls its methods.
+Your application's entry point is responsible for creating the `AchemyEngine`, managing the session, and controlling transactions (the Unit of Work).
 
 ```python
-# Assume 'session_factory' is an initialized sessionmaker.
-async with session_factory() as session:
-    repo = UserRepository(session)
+# main.py
+import asyncio
+from config import db_config
+from models import AppBase, User
+from repositories import UserRepository
+from achemy import AchemyEngine
 
-    # --- Create ---
-    new_user = await repo.create(name="Alice", email="alice@example.com")
+# Create a single, shared engine instance for your application.
+engine = AchemyEngine(db_config)
+db_engine, session_factory = engine.session()
 
-    # --- Update ---
-    user_to_update = await repo.find_by(email="alice@example.com")
-    if user_to_update:
-        user_to_update.name = "Alicia"
+async def create_tables():
+    """A utility function to create database tables."""
+    async with db_engine.begin() as conn:
+        # Drop all tables and recreate them. For production, use Alembic.
+        await conn.run_sync(AppBase.metadata.drop_all)
+        await conn.run_sync(AppBase.metadata.create_all)
+    print("Tables created.")
 
-    # --- Delete ---
-    user_to_delete = await repo.find_by(email="bob@example.com")
-    if user_to_delete:
-        await repo.delete(user_to_delete)
+async def main():
+    # Before running, create the necessary tables.
+    await create_tables()
 
-    # The business logic is responsible for the commit.
-    # All changes (create, update, delete) are persisted in one transaction.
-    await session.commit()
+    # The business logic is responsible for the session and transaction.
+    async with session_factory() as session:
+        repo = UserRepository(session)
+
+        # --- Create ---
+        print("Creating user...")
+        existing_user = await repo.find_by(email="alice@example.com")
+        if not existing_user:
+            new_user = User(name="Alice", email="alice@example.com")
+            await repo.save(new_user) # .save() is an alias for .add()
+            await session.commit()
+            print(f"User created: {new_user.id}")
+        else:
+            print("User 'alice@example.com' already exists.")
+
+        # --- Query ---
+        print("\nFinding active users...")
+        active_users = await repo.get_active_users()
+        for user in active_users:
+            print(f" - Found active user: {user.name}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 ## Bulk Operations
@@ -234,11 +181,11 @@ async with session_factory() as session:
 
 ## Pydantic Schemas & FastAPI Integration
 
-Achemy models can be easily integrated with Pydantic, which is essential for building robust APIs with frameworks like FastAPI. For production applications that value type safety, **manually defining Pydantic schemas is the recommended best practice.**
+Achemy models can be easily integrated with Pydantic, which is essential for building robust APIs with frameworks like FastAPI. The recommended workflow is to use the `achemy` CLI to generate a baseline set of Pydantic schemas from your models, and then create specialized schemas for your API inputs (e.g., `UserIn`) as needed.
 
-### Full FastAPI Example (Recommended Approach)
+### Full FastAPI Example
 
-Here’s how to build a simple User API. For API *input* and *output*, we will define explicit Pydantic models. This ensures your API contract is clear, validated, and fully supported by static type checkers like Mypy.
+Here’s how to build a simple User API. We will use a generated schema for API output (`UserSchema`) and a manually defined schema for API input (`UserIn`). This ensures your API contract is clear, validated, and fully supported by static type checkers.
 
 ```python
 # api.py
@@ -283,17 +230,9 @@ class UserIn(BaseModel):
     email: EmailStr
 
 
-# 2. Define a schema for user data in responses (API output)
-# This provides full type safety and editor autocompletion.
-class UserOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    name: str
-    email: EmailStr
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
+# 2. Import the auto-generated schema for API output.
+# We assume you have run `achemy generate-schemas` to create this.
+from schemas import UserSchema  # Assuming a schemas.py file exists
 
 
 # --- Session Dependency ---
@@ -323,19 +262,14 @@ class UserRepository(BaseRepository[User]):
 
 
 # --- Session and Repository Dependencies ---
-async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency to create and clean up a session per request."""
-    session_factory = request.app.state.session_factory
-    async with session_factory() as session:
-        yield session
-
 def get_user_repo(session: AsyncSession = Depends(get_db_session)) -> UserRepository:
     """FastAPI dependency that provides a UserRepository instance."""
     return UserRepository(session)
 
 
 # --- API Endpoints ---
-@app.post("/users/", response_model=UserOut, status_code=201)
+# Use the generated schema for the response model to ensure it matches the DB model.
+@app.post("/users/", response_model=UserSchema, status_code=201)
 async def create_user(user_in: UserIn, repo: UserRepository = Depends(get_user_repo)):
     """Create a new user."""
     # Check if user already exists (using inherited method)
@@ -353,7 +287,7 @@ async def create_user(user_in: UserIn, repo: UserRepository = Depends(get_user_r
     return user
 
 
-@app.get("/users/{user_id}", response_model=UserOut)
+@app.get("/users/{user_id}", response_model=UserSchema)
 async def get_user(user_id: uuid.UUID, repo: UserRepository = Depends(get_user_repo)):
     """Retrieve a user by their ID."""
     user = await repo.get(user_id)  # .get() is inherited from BaseRepository
@@ -361,15 +295,13 @@ async def get_user(user_id: uuid.UUID, repo: UserRepository = Depends(get_user_r
         raise HTTPException(status_code=404, detail="User not found.")
 
     # The User model instance is automatically serialized by FastAPI
-    # into our Pydantic `UserOut` schema for the response.
+    # into our Pydantic `UserSchema` for the response.
     return user
 ```
 
-### Schema Generation with the CLI (Recommended)
+### Generating Schemas with the CLI
 
-To bridge the gap between SQLAlchemy models and Pydantic schemas without sacrificing type safety, Achemy includes a command-line tool to automatically generate static, type-safe Pydantic models from your `AlchemyModel` definitions.
-
-This is the recommended approach for integrating with APIs and ensuring your code is fully type-checkable.
+Achemy includes a command-line tool to automatically generate static, type-safe Pydantic models from your `AlchemyModel` definitions. This is the recommended first step for integrating your database models with an API.
 
 #### Step 1: Install Typer
 
@@ -465,9 +397,10 @@ async def create_user_and_hometown(user_data: dict, city_data: dict):
 
 Achemy provides helpful mixins to reduce model definition boilerplate.
 
-*   **`UUIDPKMixin`**: Adds a standard `id: Mapped[uuid.UUID]` primary key.
+*   **`UUIDPKMixin`**: Adds a standard `id: Mapped[uuid.UUID]` primary key with a client-side default.
+*   **`PGUUIDPKMixin`**: For PostgreSQL, adds a UUID primary key that uses the server-side `gen_random_uuid()` function for generation.
 *   **`IntPKMixin`**: Adds a standard `id: Mapped[int]` auto-incrementing primary key.
-*   **`UpdateMixin`**: Adds `created_at` and `updated_at` timestamp columns with automatic management. All query logic (e.g., finding the last modified record) should be implemented in your repository classes.
+*   **`UpdateMixin`**: Adds `created_at` and `updated_at` timestamp columns with automatic management.
 
 ```python
 from sqlalchemy.orm import Mapped, mapped_column
