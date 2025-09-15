@@ -14,6 +14,13 @@ runner = CliRunner()
 class TestCodegen:
     """Tests for achemy/codegen.py"""
 
+    @pytest.fixture(autouse=True)
+    def patch_sys_path(self, monkeypatch):
+        # The CLI runs in a separate process, so we need to ensure
+        # the project root is in sys.path for it to find 'tests.models'
+        project_root = str(Path(__file__).parent.parent)
+        monkeypatch.syspath_prepend(project_root)
+
     def test_generate_pydantic_code_single_model(self):
         """Test generating a Pydantic schema for a single model."""
         code, imports = generate_pydantic_code(MockCombinedModel)
@@ -93,7 +100,7 @@ class TestCLI:
     def test_generate_schemas_command_success(self, tmp_path):
         """Test the 'generate-schemas' CLI command successfully creates a file."""
         output_file = tmp_path / "schemas.py"
-        result = runner.invoke(app, ["generate-schemas", "tests.models", "--output", str(output_file)])
+        result = runner.invoke(app, ["tests.models", "--output", str(output_file)])
 
         assert result.exit_code == 0
         assert "Pydantic schemas generated successfully" in result.stdout
@@ -111,7 +118,7 @@ class TestCLI:
 
         assert not output_dir.exists()
 
-        result = runner.invoke(app, ["generate-schemas", "tests.models", "--output", str(output_file)])
+        result = runner.invoke(app, ["tests.models", "--output", str(output_file)])
 
         assert result.exit_code == 0
         assert output_dir.exists()
@@ -120,7 +127,7 @@ class TestCLI:
     def test_generate_schemas_command_invalid_module(self, tmp_path):
         """Test the CLI command with a non-existent module."""
         output_file = tmp_path / "schemas.py"
-        result = runner.invoke(app, ["generate-schemas", "non.existent.module", "--output", str(output_file)])
+        result = runner.invoke(app, ["non.existent.module", "--output", str(output_file)])
 
         assert result.exit_code == 0  # The command succeeds but writes an error comment
         assert "Pydantic schemas generated successfully" in result.stdout
