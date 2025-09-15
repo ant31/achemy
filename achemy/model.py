@@ -1,4 +1,5 @@
 import logging
+import inspect
 from typing import Any, ClassVar, Self
 
 from pydantic import BaseModel, create_model
@@ -159,10 +160,12 @@ class AlchemyModel(AsyncAttrs):
     @classmethod
     def load(cls, data: dict[str, Any]) -> Self:
         """
-        Load an instance from a dictionary by passing valid attributes to the constructor.
+        Load an instance from a dictionary.
 
         This method filters the input dictionary to include only keys that correspond
-        to mapped SQLAlchemy column properties, then instantiates the class with them.
+        to mapped SQLAlchemy column properties. It then instantiates the class using
+        attributes that are part of the constructor, and sets the remaining attributes
+        after instantiation.
 
         Args:
             data: The dictionary containing data to load.
@@ -193,8 +196,20 @@ class AlchemyModel(AsyncAttrs):
             logger.debug(f"Ignored non-mapped keys when loading {cls.__name__}: {sorted(list(ignored_keys))}")
 
         try:
-            # Instantiate the class using the filtered data
-            return cls(**filtered_data)
+            # Separate data for constructor and for setting after instantiation
+            init_param_keys = inspect.signature(cls).parameters.keys()
+
+            init_data = {k: v for k, v in filtered_data.items() if k in init_param_keys}
+            non_init_data = {k: v for k, v in filtered_data.items() if k not in init_param_keys}
+
+            # Instantiate the class using the constructor data
+            instance = cls(**init_data)
+
+            # Set the remaining attributes on the instance
+            for key, value in non_init_data.items():
+                setattr(instance, key, value)
+
+            return instance
         except TypeError as e:
             logger.error(f"Failed to instantiate {cls.__name__} from data: {e}", exc_info=True)
             # Re-raise to signal that instantiation failed, which is a critical error.
