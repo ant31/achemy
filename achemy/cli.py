@@ -3,7 +3,7 @@ from typing import Annotated
 
 import typer
 
-from achemy.codegen import generate_schemas_from_module_code
+from .codegen import generate_schemas_from_module_code
 
 app = typer.Typer(
     name="achemy",
