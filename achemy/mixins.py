@@ -27,11 +27,6 @@ class PKMixin(MappedAsDataclass):
             init=False,
         )
 
-    @classmethod
-    async def find(cls, session: AsyncSession, pk_uuid: uuid.UUID) -> Self | None:
-        """Return the instance with the given UUID primary key."""
-        return await session.get(cls, pk_uuid)
-
 
 class UpdateMixin(MappedAsDataclass):
     __abstract__ = True

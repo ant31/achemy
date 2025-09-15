@@ -396,9 +396,11 @@ uvicorn api:app --reload
 Achemy models provide helper methods for data conversion:
 
 ```python
-# Assume 'session_factory' has been created from your ActiveEngine instance.
+# Assume 'session_factory' has been created from your ActiveEngine instance,
+# and you have a UserRepository as defined in previous examples.
 async with session_factory() as session:
-    user = await User.find_by(session, name="Alicia")
+    repo = UserRepository(session)
+    user = await repo.find_by(name="Alicia")
 
 if user:
     # Convert model to a dictionary (mapped columns only)
@@ -452,7 +454,7 @@ async def create_user_and_hometown(user_data: dict, city_data: dict):
 
 Achemy provides helpful mixins to reduce model definition boilerplate.
 
-*   **`PKMixin`**: Adds a standard `id: Mapped[uuid.UUID]` primary key. Also provides a convenient `find(session, pk)` classmethod for simple primary key lookups.
+*   **`PKMixin`**: Adds a standard `id: Mapped[uuid.UUID]` primary key.
 *   **`UpdateMixin`**: Adds `created_at` and `updated_at` timestamp columns with automatic management. All query logic (e.g., finding the last modified record) should be implemented in your repository classes.
 
 ```python
@@ -473,7 +475,8 @@ async with session_factory() as session:
     repo = MyModelRepository(session)
     # Example of a custom repository method:
     # latest = await repo.find_last_modified()
-    instance = await MyModel.find(session, some_uuid)
+    # To find an instance by its primary key, use the inherited .get() method:
+    instance = await repo.get(some_uuid)
 ```
 
 ## Examples
