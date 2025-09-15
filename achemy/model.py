@@ -1,12 +1,12 @@
 import inspect
 import logging
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, ForwardRef, Self
 
 from pydantic import BaseModel, create_model
 from pydantic_core import to_jsonable_python
 from sqlalchemy import FromClause
 from sqlalchemy.ext.asyncio import AsyncAttrs
-from sqlalchemy.orm import ColumnProperty, Mapper
+from sqlalchemy.orm import ColumnProperty, Mapper, RelationshipProperty
 from sqlalchemy.sql.expression import ClauseElement
 
 logger = logging.getLogger(__name__)
@@ -251,7 +251,7 @@ class AlchemyModel(AsyncAttrs):
             raise ValueError(f"Cannot create schema: Class {cls.__name__} is not mapped by SQLAlchemy.")
 
         fields = {}
-        # Use mapper to iterate over all mapped columns, including those from mixins
+        # Use mapper to iterate over all mapped columns and relationships
         for prop in cls.__mapper__.iterate_properties:
             if isinstance(prop, ColumnProperty):
                 # A ColumnProperty can have multiple columns (e.g., composite keys)
@@ -284,6 +284,20 @@ class AlchemyModel(AsyncAttrs):
                     default_value = None
 
                 fields[prop.key] = (field_type, default_value)
+
+            elif isinstance(prop, RelationshipProperty):
+                related_class = prop.mapper.class_
+                related_schema_name = f"{related_class.__name__}Schema"
+                forward_ref = ForwardRef(related_schema_name)
+
+                field_type: Any
+                if prop.uselist:
+                    field_type = list[forward_ref] | None
+                else:
+                    field_type = forward_ref | None
+
+                # Relationships are made optional in the schema by default
+                fields[prop.key] = (field_type, None)
 
         schema_name = f"{cls.__name__}Schema"
         # Create the Pydantic model dynamically

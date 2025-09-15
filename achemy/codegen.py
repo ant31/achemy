@@ -3,7 +3,7 @@ import inspect
 import sys
 import types
 from pathlib import Path
-from typing import Any, get_args, get_origin
+from typing import Any, ForwardRef, get_args, get_origin
 
 from achemy.model import AlchemyModel
 
@@ -20,6 +20,10 @@ def _get_type_repr(t: Any) -> tuple[str, set[str]]:
         required import statements.
     """
     imports = set()
+
+    if isinstance(t, ForwardRef):
+        return f"'{t.__forward_arg__}'", imports
+
     origin = get_origin(t)
     args = get_args(t)
 
@@ -65,7 +69,7 @@ def _get_type_repr(t: Any) -> tuple[str, set[str]]:
     return str(t), imports  # Fallback
 
 
-def generate_pydantic_code(model_cls: type[AlchemyModel]) -> tuple[str, set[str]]:
+def generate_pydantic_code(model_cls: type[AlchemyModel]) -> tuple[str, set[str], str]:
     """
     Generates Python code for a Pydantic schema from an AlchemyModel.
 
@@ -73,8 +77,8 @@ def generate_pydantic_code(model_cls: type[AlchemyModel]) -> tuple[str, set[str]
         model_cls: The AlchemyModel subclass to inspect.
 
     Returns:
-        A tuple containing the generated Pydantic schema code as a string
-        and a set of required import statements.
+        A tuple containing the generated Pydantic schema code as a string,
+        a set of required import statements, and the schema class name.
     """
     schema = model_cls.pydantic_schema()
     schema_name = f"{model_cls.__name__}Schema"
@@ -105,7 +109,7 @@ def generate_pydantic_code(model_cls: type[AlchemyModel]) -> tuple[str, set[str]
     ]
     code_lines.extend(fields_str)
 
-    return "\n".join(code_lines), all_imports
+    return "\n".join(code_lines), all_imports, schema_name
 
 
 def generate_schemas_from_module_code(module_path: str) -> str:
@@ -134,6 +138,7 @@ def generate_schemas_from_module_code(module_path: str) -> str:
 
     all_schema_codes = []
     all_imports = set()
+    all_schema_names = []
 
     # Get all classes from the module, without pre-filtering.
     model_classes = [obj for _, obj in inspect.getmembers(module, inspect.isclass)]
@@ -143,9 +148,10 @@ def generate_schemas_from_module_code(module_path: str) -> str:
     for model_cls in model_classes:
         try:
             # Attempt to generate schema; skip if it's not a valid model.
-            schema_code, imports = generate_pydantic_code(model_cls)
+            schema_code, imports, schema_name = generate_pydantic_code(model_cls)
             all_schema_codes.append(schema_code)
             all_imports.update(imports)
+            all_schema_names.append(schema_name)
         except (AttributeError, ValueError):
             # This class is not a valid AlchemyModel (e.g., no `pydantic_schema`
             # or not mapped by SQLAlchemy), so we silently skip it.
@@ -156,4 +162,11 @@ def generate_schemas_from_module_code(module_path: str) -> str:
 
     header = sorted(list(all_imports))
     full_code = "\n".join(header) + "\n\n\n" + "\n\n\n".join(all_schema_codes)
+
+    # Add calls to resolve forward references for relationships
+    if all_schema_names:
+        rebuild_calls = "\n".join([f"{name}.model_rebuild()" for name in sorted(all_schema_names)])
+        full_code += "\n\n\n# Resolve forward references for relationships\n"
+        full_code += rebuild_calls
+
     return full_code
