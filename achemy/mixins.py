@@ -1,10 +1,8 @@
 import logging
 import uuid
 from datetime import datetime
-from typing import Self
 
 from sqlalchemy import func
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, MappedAsDataclass, declared_attr, mapped_column
 
 logger = logging.getLogger(__name__)
