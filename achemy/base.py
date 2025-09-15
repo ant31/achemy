@@ -1,6 +1,6 @@
 from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass
 
-from .model import AlchemyModel
+from achemy.model import AlchemyModel
 
 
 class Base(MappedAsDataclass, DeclarativeBase, AlchemyModel):

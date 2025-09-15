@@ -4,7 +4,7 @@ import subprocess
 from functools import cache
 from typing import Any
 
-from . import __version__
+from achemy import __version__
 
 
 @cache
