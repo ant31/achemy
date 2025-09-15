@@ -1,7 +1,7 @@
 from achemy.base import Base
-from achemy.config import PostgreSQLConfigSchema
+from achemy.config import DatabaseConfig
 from achemy.engine import AchemyEngine
-from achemy.mixins import IntPKMixin, UpdateMixin, UUIDPKMixin
+from achemy.mixins import IntPKMixin, PGUUIDPKMixin, UpdateMixin, UUIDPKMixin
 from achemy.model import AlchemyModel
 from achemy.repository import BaseRepository
 from achemy.schema import Schema
@@ -14,8 +14,9 @@ __all__ = [
     "Base",
     "BaseRepository",
     "IntPKMixin",
-    "PostgreSQLConfigSchema",
+    "DatabaseConfig",
     "Schema",
     "UUIDPKMixin",
     "UpdateMixin",
+    "PGUUIDPKMixin",
 ]

@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
-from achemy.config import PostgreSQLConfigSchema
+from achemy.config import DatabaseConfig
 
 logger = logging.getLogger(__name__)
 
@@ -39,21 +39,21 @@ class AchemyEngine:
     async_sessionmaker based on a provided configuration schema.
     """
 
-    config: PostgreSQLConfigSchema
+    config: DatabaseConfig
     engine_kwargs: dict[str, Any]
     sessions: dict[str, dict[str, async_sessionmaker[AsyncSession]]]
     engines: dict[str, dict[str, AsyncEngine]]
 
-    def __init__(self, config: PostgreSQLConfigSchema, **kwargs: Any):
+    def __init__(self, config: DatabaseConfig, **kwargs: Any):
         """
         Initializes the AchemyEngine.
 
         Args:
-            config: The configuration object (e.g., PostgreSQLConfigSchema).
+            config: The configuration object (e.g., DatabaseConfig).
             **kwargs: Additional keyword arguments to pass to the engine creator.
         """
-        if not isinstance(config, PostgreSQLConfigSchema):
-            raise TypeError("config must be an instance of PostgreSQLConfigSchema")
+        if not isinstance(config, DatabaseConfig):
+            raise TypeError("config must be an instance of DatabaseConfig")
         self.config = config
         logger.debug(f"Initializing AchemyEngine with config: {config}")
         self.engine_kwargs = self._prep_engine_arguments(kwargs)

@@ -11,10 +11,29 @@ logger = logging.getLogger(__name__)
 class UUIDPKMixin(MappedAsDataclass):
     __abstract__ = True
     """
-    Provides a standard UUID primary key column named `id`.
+    Provides a standard, portable UUID primary key column named `id`.
 
-    This mixin adds an `id` field of type `uuid.UUID` with a client-side default
-    factory and a database-side default function for generation.
+    This mixin uses a client-side `uuid.uuid4` default factory and is
+    compatible with any database backend.
+    """
+
+    @declared_attr
+    def id(cls) -> Mapped[uuid.UUID]:
+        return mapped_column(
+            primary_key=True,
+            default_factory=uuid.uuid4,
+            kw_only=True,
+            init=False,
+        )
+
+
+class PGUUIDPKMixin(MappedAsDataclass):
+    __abstract__ = True
+    """
+    Provides a UUID primary key with a PostgreSQL-specific server-side default.
+
+    This should be used in place of `UUIDPKMixin` for models that will be
+    used with a PostgreSQL database to leverage its native UUID generation.
     """
 
     @declared_attr

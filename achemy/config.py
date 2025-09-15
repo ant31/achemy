@@ -11,24 +11,11 @@ class BaseConfig(BaseModel):
     model_config = ConfigDict(extra="allow", validate_assignment=False)
 
 
-class PostgreSQLConfigSchema(BaseConfig):
+class DatabaseConfig(BaseConfig):
     """
-    Placeholder for configuration schema.
+    Database configuration schema.
 
-    Expected Attributes:
-        db (str): Database name identifier.
-        default_schema (str): Default PostgreSQL schema.
-        use_internal_pool (bool): Whether to use SQLAlchemy's pool.
-        mode (Literal["sync", "async"]): Operation mode.
-        connect_timeout (int): Connection timeout in seconds.
-        debug (bool): Enable debug logging (e.g., SQL echo).
-        async_driver (str): Async driver (e.g., 'asyncpg').
-        params (dict): Dictionary of extra connection parameters.
-        kwargs (dict): Extra kwargs for engine creation.
-
-    Expected Methods:
-        uri() -> str: Returns the synchronous DSN.
-        async_uri() -> str: Returns the asynchronous DSN.
+    Defines connection parameters for creating a SQLAlchemy engine DSN.
     """
 
     db: str = Field(default="achemy-dev")
@@ -36,7 +23,8 @@ class PostgreSQLConfigSchema(BaseConfig):
     port: int = Field(default=5432)
     password: str = Field(default="achemy")
     host: str = Field(default="localhost")
-    params: dict[str, str | int] = Field(default={"sslmode": "disable"})
+    params: dict[str, str | int] = Field(default_factory=dict)
+    dialect: str = Field(default="postgresql")
     driver: str = Field(default="asyncpg", validation_alias=aliases.AliasChoices("async_driver", "driver"))
     connect_timeout: int = Field(default=10)
     create_engine_kwargs: dict[str, Any] = Field(default_factory=dict)
@@ -52,13 +40,20 @@ class PostgreSQLConfigSchema(BaseConfig):
         if self.dsn:
             logger.debug("Using provided DSN: %s", self.dsn)
             return self.dsn
-        params = self.params.copy()
-        if "sslmode" in params and self.driver == "asyncpg":
-            logger.debug("Adjusting 'sslmode' to 'ssl' in config params for asyncpg.")
-            params["ssl"] = params.pop("sslmode")
 
-        host = f"postgresql+{self.driver}://{self.user}:{self.password}@{self.host}:{self.port}/{self.db}"
-        query_params = "&".join([f"{k}={v}" for k, v in params.items()])
-        if params:
+        # Define dialect-specific default parameters
+        default_params = {
+            # asyncpg uses 'ssl', not 'sslmode', in the DSN query string
+            "postgresql": {"ssl": "disable"},
+        }
+
+        # Start with defaults for the current dialect, if any
+        final_params = default_params.get(self.dialect, {}).copy()
+        # Merge user-provided params, which will override defaults
+        final_params.update(self.params)
+
+        host = f"{self.dialect}+{self.driver}://{self.user}:{self.password}@{self.host}:{self.port}/{self.db}"
+        if final_params:
+            query_params = "&".join([f"{k}={v}" for k, v in final_params.items()])
             host = f"{host}?{query_params}"
         return host

@@ -3,7 +3,6 @@ from collections.abc import Sequence
 from typing import Any, Literal, TypeVar
 
 import sqlalchemy as sa
-import sqlalchemy.dialects.postgresql as sa_pg
 from sqlalchemy import FromClause, ScalarResult, Select, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_object_session
@@ -76,18 +75,14 @@ class BaseRepository[T]:
             return [] if returning else None
 
         values = [o.dump_model(with_meta=False, fields=fields) for o in objs]
-        dialect = self.session.bind.dialect.name if self.session.bind else "unknown"
+        stmt = sa.insert(self._model_cls)
 
-        if dialect == "postgresql":
-            stmt = sa_pg.insert(self._model_cls)
-            if on_conflict == "nothing":
-                stmt = stmt.on_conflict_do_nothing(index_elements=on_conflict_index_elements)
-            elif on_conflict != "fail":
-                raise ValueError(f"Invalid on_conflict strategy '{on_conflict}' for PostgreSQL.")
-        else:
-            if on_conflict != "fail":
-                raise NotImplementedError(f"on_conflict='{on_conflict}' is not supported for '{dialect}'.")
-            stmt = sa.insert(self._model_cls)
+        if on_conflict == "nothing":
+            # This works for dialects that support it (e.g., PostgreSQL, SQLite)
+            stmt = stmt.on_conflict_do_nothing(index_elements=on_conflict_index_elements)
+        elif on_conflict != "fail":
+            dialect = self.session.bind.dialect.name if self.session.bind else "unknown"
+            raise NotImplementedError(f"on_conflict='{on_conflict}' is not supported for dialect '{dialect}'.")
 
         insert_stmt = stmt.values(values)
         if returning:
