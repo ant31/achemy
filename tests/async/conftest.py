@@ -46,7 +46,8 @@ async def acreate_tables(async_engine):
     """Create all tables defined in Base.metadata once per session."""
     print("acreate_tables: Creating all tables...")
     async with async_engine.engine().begin() as conn:
-        # Create all tables associated with the Base metadata
+        # Drop and create all tables associated with the Base metadata
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     print("acreate_tables: All tables created.")
     yield # Let the session run

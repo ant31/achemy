@@ -2,16 +2,16 @@ import uuid
 
 import pytest
 from sqlalchemy import UniqueConstraint
-from sqlalchemy.orm import DeclarativeBase, Mapped, MappedAsDataclass, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
-from achemy import AlchemyModel, UpdateMixin, UUIDPKMixin
+from achemy import Base, UpdateMixin, UUIDPKMixin
 
 # --- Mock Models and Fixtures for test_mixins.py ---
 
 
 # Base class for mixin test models, following the pattern in demo models
-class MockMixinBase(MappedAsDataclass, DeclarativeBase, AlchemyModel):
-    pass
+class MockMixinBase(Base):
+    __abstract__ = True
 
 class MockPKModel(MockMixinBase, UUIDPKMixin):
     """Model using only UUIDPKMixin for testing."""
