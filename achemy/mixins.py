@@ -72,4 +72,3 @@ class UpdateMixin(MappedAsDataclass):
     @declared_attr
     def updated_at(cls) -> Mapped[datetime]:
         return mapped_column(default=func.now(), onupdate=func.now(), init=False)
-

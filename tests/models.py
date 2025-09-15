@@ -1,7 +1,6 @@
 """
 Shared models for tests.
 """
-import uuid
 
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
