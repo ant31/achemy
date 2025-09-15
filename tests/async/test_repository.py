@@ -118,7 +118,7 @@ class TestBaseRepository:
             await repo.add(model_class(name=f"{base_name}_conflict"), commit=True)
 
             # Test conflict: 'fail' (default)
-            conflict_data = [model_class(name=f"{base_name}_conflict", value=99)]
+            conflict_data = [{"name": f"{base_name}_conflict", "value": 99}]
             with pytest.raises(IntegrityError):
                 await repo.bulk_insert(conflict_data, commit=True)
 
@@ -127,9 +127,9 @@ class TestBaseRepository:
 
             # Test conflict: 'nothing'
             data = [
-                model_class(name=f"{base_name}_1", value=1),
-                model_class(name=f"{base_name}_conflict", value=98),  # This one should be skipped
-                model_class(name=f"{base_name}_2", value=2),
+                {"name": f"{base_name}_1", "value": 1},
+                {"name": f"{base_name}_conflict", "value": 98},  # This one should be skipped
+                {"name": f"{base_name}_2", "value": 2},
             ]
 
             inserted_skipped = await repo.bulk_insert(
