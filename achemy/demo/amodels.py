@@ -7,7 +7,7 @@ from achemy import AlchemyModel, UpdateMixin, UUIDPKMixin
 
 
 class ADemoBase(MappedAsDataclass, DeclarativeBase, AlchemyModel):
-    pass
+    __abstract__ = True
 
 
 class AResident(ADemoBase, UUIDPKMixin, UpdateMixin):
