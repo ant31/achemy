@@ -6,14 +6,14 @@ import sqlalchemy
 from sqlalchemy import String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from achemy import AchemyEngine, Base, PostgreSQLConfigSchema
+from achemy import AchemyEngine, Base, DatabaseConfig
 
 
 # Database configuration for tests
 @pytest.fixture(scope="session")
 def db_config():
     """Get database configuration from environment variables or use defaults"""
-    return PostgreSQLConfigSchema(
+    return DatabaseConfig(
         user=os.environ.get("TEST_DB_USER", "activealchemy"),
         password=os.environ.get("TEST_DB_PASSWORD", "activealchemy"),
         host=os.environ.get("TEST_DB_HOST", "localhost"),

@@ -1,8 +1,8 @@
-from achemy.config import PostgreSQLConfigSchema
+from achemy.config import DatabaseConfig
 
 
 def test_config():
-    PostgresConfig = PostgreSQLConfigSchema(db="achemy-test", port=5434)
+    PostgresConfig = DatabaseConfig(db="achemy-test", port=5434)
     assert PostgresConfig.db == "achemy-test"
     assert PostgresConfig.user == "achemy"
     assert PostgresConfig.port == 5434

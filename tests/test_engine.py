@@ -7,14 +7,14 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlalchemy.pool import NullPool
 
-from achemy import AchemyEngine, PostgreSQLConfigSchema
+from achemy import AchemyEngine, DatabaseConfig
 
 # --- Fixtures ---
 
 @pytest.fixture
 def minimal_config():
-    """Provides a minimal valid PostgreSQLConfigSchema."""
-    return PostgreSQLConfigSchema(db="testdb", user="testuser", password="pw", host="localhost")
+    """Provides a minimal valid DatabaseConfig."""
+    return DatabaseConfig(db="testdb", user="testuser", password="pw", host="localhost")
 
 
 @pytest.fixture
@@ -42,7 +42,7 @@ def test_engine_initialization(minimal_config):
 
 def test_engine_initialization_invalid_config():
     """Test AchemyEngine initialization with invalid config type."""
-    with pytest.raises(TypeError, match="config must be an instance of PostgreSQLConfigSchema"):
+    with pytest.raises(TypeError, match="config must be an instance of DatabaseConfig"):
         AchemyEngine(config={"db": "wrong_type"})
 
 
