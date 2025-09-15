@@ -164,13 +164,26 @@ class BaseRepository(Generic[T]):
     def select(self, *args: Any, **kwargs: Any) -> Select[tuple[T]]:
         return sa.select(self._model_cls, *args, **kwargs)
 
-    def where(self, *args: Any, **kwargs: Any) -> Select[tuple[T]]:
+    def where(self, *args: Any) -> Select[tuple[T]]:
+        """
+        Builds a query with a WHERE clause using SQLAlchemy expressions.
+
+        This method encourages explicit, type-safe query construction by accepting
+        any number of SQLAlchemy binary expressions.
+
+        Args:
+            *args: SQLAlchemy binary expressions (e.g., `self._model_cls.name == 'Alice'`).
+
+        Returns:
+            A new Select object with the WHERE clause applied.
+
+        Example:
+            # Find users named 'Alice' who are active
+            active_alice_query = repo.where(User.name == 'Alice', User.is_active == True)
+        """
         query = self.select()
-        mapper_props = {p.key for p in self.__mapper__.iterate_properties}
-        filters = [getattr(self._model_cls, key) == value for key, value in kwargs.items() if key in mapper_props]
-        all_filters = list(args) + filters
-        if all_filters:
-            query = query.where(*all_filters)
+        if args:
+            query = query.where(*args)
         return query
 
     async def _execute_query(self, query: Select[tuple[T]]) -> ScalarResult[T]:
@@ -198,8 +211,37 @@ class BaseRepository(Generic[T]):
         result = await self._execute_query(q)
         return result.first()
 
-    async def find_by(self, *args: Any, **kwargs: Any) -> T | None:
-        query = self.where(*args, **kwargs)
+    async def find_by(self, **kwargs: Any) -> T | None:
+        """
+        Finds the first record matching simple equality criteria.
+
+        This is a convenience method for simple key-value lookups. For more
+        complex queries (e.g., using inequalities, LIKE, etc.), use the `where()`
+        method with explicit SQLAlchemy expressions and `await self.first(query)`.
+
+        Args:
+            **kwargs: Field-value pairs to match for equality.
+
+        Returns:
+            The first matching model instance or None.
+        """
+        mapper_props = {p.key for p in self.__mapper__.iterate_properties}
+
+        # Warn about keys that are not mapped properties
+        unknown_keys = set(kwargs.keys()) - mapper_props
+        if unknown_keys:
+            logger.warning(
+                "find_by called with keys that are not mapped properties and will be ignored: %s",
+                sorted(list(unknown_keys)),
+            )
+
+        filters = [getattr(self._model_cls, key) == value for key, value in kwargs.items() if key in mapper_props]
+
+        if not filters:
+            logger.warning("find_by() called with no valid filtering criteria. This will return the first record in the table.")
+            return await self.first()
+
+        query = self.select().where(*filters)
         return await self.first(query=query)
 
     async def get(self, pk: Any) -> T | None:

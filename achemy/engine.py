@@ -2,6 +2,8 @@
 Provides the asynchronous SQLAlchemy engine manager for ActiveAlchemy.
 """
 
+import hashlib
+import json
 import logging
 from typing import Any
 
@@ -16,6 +18,22 @@ from sqlalchemy.pool import NullPool
 from achemy.config import PostgreSQLConfigSchema
 
 logger = logging.getLogger(__name__)
+
+
+def _generate_cache_key(data: dict[str, Any]) -> str:
+    """Creates a stable SHA256 hash from a dictionary for use as a cache key."""
+    if not data:
+        return "default"
+    try:
+        # Using json.dumps with sort_keys=True ensures a canonical representation.
+        # default=str is a fallback for non-serializable types, which is better
+        # than failing but may not guarantee uniqueness for complex objects.
+        encoded = json.dumps(data, sort_keys=True, default=str).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+    except TypeError as e:
+        logger.warning("Could not serialize kwargs to JSON for cache key, falling back to repr: %s", e)
+        # Fallback for truly un-serializable content, less reliable but won't crash.
+        return repr(sorted(data.items()))
 
 
 class ActiveEngine:
@@ -142,7 +160,7 @@ class ActiveEngine:
 
         # Create a unique key for this engine configuration
         engine_key = f"{database}_{schema}_{isolation_level or 'default'}"
-        engine_conf_key = str(sorted(kwargs.items()))  # Key based on extra kwargs
+        engine_conf_key = _generate_cache_key(kwargs)  # Key based on extra kwargs
         if engine_key not in self.engines:
             self.engines[engine_key] = {}
 
@@ -198,8 +216,8 @@ class ActiveEngine:
 
         # Use same keying logic as get_engine for consistency
         engine_key = f"{database}_{schema}_{isolation_level or 'default'}"
-        engine_conf_key = str(sorted(engine_kwargs.items()))  # Key based on engine kwargs
-        session_conf_key = str(sorted(session_kwargs.items()))  # Key based on session kwargs
+        engine_conf_key = _generate_cache_key(engine_kwargs)  # Key based on engine kwargs
+        session_conf_key = _generate_cache_key(session_kwargs)  # Key based on session kwargs
 
         # Ensure outer dictionary exists
         if engine_key not in self.sessions:
