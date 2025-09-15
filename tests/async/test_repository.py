@@ -3,9 +3,9 @@ Tests for achemy/repository.py
 """
 import pytest
 from sqlalchemy.exc import IntegrityError
+from tests.conftest import MockCombinedModel
 
 from achemy import BaseRepository
-from tests.conftest import MockCombinedModel
 
 
 # --- Repository for tests ---
