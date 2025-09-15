@@ -1,5 +1,5 @@
-import logging
 import inspect
+import logging
 from typing import Any, ClassVar, Self
 
 from pydantic import BaseModel, create_model
