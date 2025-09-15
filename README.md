@@ -1,15 +1,16 @@
 # Achemy Documentation
 
-Achemy is an asynchronous Python library that simplifies database interactions by providing an Active Record pattern implementation built on SQLAlchemy 2.0+. It focuses on async operations, automatic session management, and seamless Pydantic integration for ease of use.
+Achemy is an asynchronous Python library that serves as a toolkit for SQLAlchemy 2.0+, designed to streamline database interactions and promote best practices like the Repository pattern. It provides a powerful base model, a fluent query-building interface, and seamless Pydantic integration.
 
 ## Features
 
--   **Active Record Pattern**: Intuitive, model-centric methods for database operations (`User.all()`, `user.save()`).
--   **Async First**: Built for modern asynchronous applications with `async/await`.
--   **Explicit Session Management**: Achemy enforces safe, explicit session and transaction handling, preventing common performance and data integrity pitfalls.
--   **Pydantic Integration**: Automatically generate Pydantic schemas from your SQLAlchemy models for API validation and serialization.
+-   **Repository Pattern Support**: A clean separation of data models from query logic (`QueryMixin`) encourages robust and testable data access layers.
+-   **Fluent Query Interface**: Chainable, model-centric methods for building complex queries (`User.select().where(...)`).
+-   **Async First**: Built from the ground up for modern asynchronous applications with `async/await`.
+-   **Explicit Session Management**: Achemy enforces safe, explicit session and transaction handling via SQLAlchemy's Unit of Work pattern.
+-   **Pydantic Integration**: Automatically generate Pydantic schemas from your SQLAlchemy models for rapid prototyping.
 -   **Bulk Operations**: Efficiently insert large numbers of records with support for conflict resolution.
--   **Helpful Mixins**: Common patterns like UUID primary keys and timestamp tracking are available as simple mixins.
+-   **Helpful Mixins**: Common patterns like UUID primary keys (`PKMixin`) and timestamp tracking (`UpdateMixin`) are available as simple mixins.
 
 ## Installation
 
@@ -47,11 +48,11 @@ Initialize the `ActiveEngine` and define your models. It's good practice to crea
 # models.py
 from sqlalchemy.orm import Mapped, mapped_column
 
-from achemy import Base, PKMixin, UpdateMixin
+from achemy import Base, PKMixin, QueryMixin, UpdateMixin
 
 
-# It's recommended to create your own Base class for your models
-class AppBase(Base):
+# Create a common base for models that will have query capabilities.
+class AppBase(Base, QueryMixin):
     __abstract__ = True
     # You can add shared logic or configurations here
 
@@ -73,168 +74,174 @@ In your application's entry point, create the `ActiveEngine`. You will use this 
 ```python
 # main.py
 import asyncio
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from achemy import ActiveEngine
 from config import db_config
 from models import User
 
+# --- Repository for Data Access ---
+class UserRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, name: str, email: str) -> User:
+        """Creates and saves a new user."""
+        new_user = User(name=name, email=email)
+        # QueryMixin provides the .save() method
+        await new_user.save(session=self.session)
+        return new_user
+
+    async def get_by_email(self, email: str) -> User | None:
+        """Finds a user by their email."""
+        # QueryMixin provides the .find_by() method
+        return await User.find_by(self.session, email=email)
+
+# --- Application Entry Point ---
 # Create the engine instance. This should be a singleton in your application.
 engine = ActiveEngine(db_config)
 
 # Get a session factory from the engine.
 _db_engine, session_factory = engine.session()
 
-
 async def main():
-    # Your application logic here
-    # Example: create a user
+    # Business logic is responsible for the session and transaction.
     async with session_factory() as session:
-        new_user = User(name="Alice", email="alice@example.com")
-        await new_user.save(session=session)
-        await session.commit()
-        print(f"Created user: {new_user}")
+        # Business logic interacts with the repository, not the models directly.
+        repo = UserRepository(session)
 
+        user = await repo.get_by_email("alice@example.com")
+        if not user:
+            user = await repo.create(name="Alice", email="alice@example.com")
+            await session.commit()
+            print(f"Created user: {user}")
+        else:
+            print(f"Found user: {user}")
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-## Basic CRUD Operations
+## Using the Repository Pattern
 
-### Creating and Saving Records
+Achemy is designed to support the **Repository Pattern**, which separates your business logic from the data access logic. A repository centralizes all database operations for a specific model. Your business logic will interact with the repository, not directly with the model's query methods.
 
-All database operations must be performed within an explicit session context. You get a session from a session factory, which is created by your `ActiveEngine` instance. This ensures proper transaction management and connection handling. Commits must be handled on the session object.
+First, ensure your models inherit from `QueryMixin` to access the query helpers.
 
 ```python
-# Assume 'engine' is an initialized ActiveEngine instance
-_db_engine, session_factory = engine.session()
+# models.py
+# ...
+from achemy import Base, PKMixin, QueryMixin, UpdateMixin
 
+class AppBase(Base, QueryMixin):  # Add QueryMixin here
+    __abstract__ = True
+
+class User(AppBase, PKMixin, UpdateMixin):
+    # ...
+```
+
+### Example: `UserRepository`
+
+Here is a simple repository for the `User` model. It takes a `session` in its constructor, which allows it to participate in a larger "Unit of Work".
+
+```python
+# repositories.py
+import uuid
+from sqlalchemy.ext.asyncio import AsyncSession
+from models import User
+
+class UserRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, name: str, email: str) -> User:
+        """Creates a new user instance and adds it to the session."""
+        user = User(name=name, email=email)
+        # The .add() method is a convenient alias for session.add()
+        await User.add(user, self.session)
+        return user
+
+    async def get_by_id(self, user_id: uuid.UUID) -> User | None:
+        """Gets a user by their primary key."""
+        # PKMixin provides .find() as a helper for .get()
+        return await User.find(self.session, user_id)
+
+    async def get_by_email(self, email: str) -> User | None:
+        """Gets a user by their email address."""
+        return await User.find_by(self.session, email=email)
+
+    async def get_active_users(self) -> list[User]:
+        """Returns all active users."""
+        query = User.where(User.is_active == True).order_by(User.name)
+        return await User.all(self.session, query=query)
+
+    def update(self, user: User, new_name: str) -> None:
+        """Updates a user's name (in-memory)."""
+        # The session tracks changes automatically. No save() call is needed
+        # for updates on an object that is already in the session.
+        user.name = new_name
+
+    async def delete(self, user: User) -> None:
+        """Deletes a user."""
+        await User.delete(user, self.session)
+```
+
+### Using the Repository in Business Logic
+
+Your application or business logic controls the session and transaction. It creates a repository instance and calls its methods.
+
+```python
+# Assume 'session_factory' is an initialized sessionmaker.
 async with session_factory() as session:
-    # Create an instance and save it.
-    user = User(name="Alice", email="alice@example.com")
-    await user.save(session=session)
+    repo = UserRepository(session)
 
-    # Use the class method 'add'.
-    user_bob = User(name="Bob", email="bob@example.com")
-    await User.add(user_bob, session=session)
+    # --- Create ---
+    new_user = await repo.create(name="Alice", email="alice@example.com")
 
-    # Add multiple records at once
-    users_to_add = [User(name="Charlie", email="charlie@example.com"), User(name="Diana", email="diana@example.com")]
-    await User.add_all(users_to_add, session=session)
+    # --- Update ---
+    user_to_update = await repo.get_by_email("alice@example.com")
+    if user_to_update:
+        repo.update(user_to_update, new_name="Alicia")
 
-    # The changes are only flushed to the DB at this point.
-    # To persist them, commit the session:
+    # --- Delete ---
+    user_to_delete = await repo.get_by_email("bob@example.com")
+    if user_to_delete:
+        await repo.delete(user_to_delete)
+
+    # The business logic is responsible for the commit.
+    # All changes (create, update, delete) are persisted in one transaction.
     await session.commit()
-```
-The session context manager automatically handles rollback on exceptions. See the section on Transactions for more details.
-
-### Querying Records
-
-```python
-# Assume 'session_factory' has been created from your ActiveEngine instance.
-async with session_factory() as session:
-    # Get all users (use with caution on large tables)
-    all_users = await User.all(session)
-
-    # Get a user by primary key (highly optimized)
-    user_by_pk = await User.get(session, some_uuid)
-
-    # Find a user by primary key using the PKMixin helper 'find'
-    # (This is equivalent to User.get(pk))
-    user_by_find = await User.find(session, some_uuid)
-
-    # Find the first user matching specific criteria
-    user_by_email = await User.find_by(session, email="alice@example.com")
-
-    # Find all users matching criteria
-    active_users = await User.all(session, query=User.where(User.is_active==True))
-
-    # Get a count of records
-    active_user_count = await User.count(session, query=User.where(User.is_active==True))
-    total_user_count = await User.count(session)
-
-    # Get the first record, ordered by a specific column
-    first_user_by_name = await User.first(session, order_by=User.name.asc())
-
-    # Get the most recently created/modified record (requires UpdateMixin)
-    latest_user = await User.last_created(session)
-    last_updated_user = await User.last_modified(session)
-```
-
-### Advanced Querying with `select()`
-
-For more complex queries, use the `select()` method, which returns a SQLAlchemy `Select` object that you can chain.
-
-```python
-from sqlalchemy import or_
-
-# Find all active users named Alice or Bob, ordered by name descending
-query = (
-    User.select().where(User.is_active == True, or_(User.name == "Alice", User.name == "Bob")).order_by(User.name.desc()).limit(10)
-)
-
-# Execute the query within a session
-# Assume 'session_factory' has been created from your ActiveEngine instance.
-async with session_factory() as session:
-    selected_users = await User.all(session, query=query)
-```
-
-### Updating Records
-
-```python
-# Assume 'session_factory' has been created from your ActiveEngine instance.
-async with session_factory() as session:
-    user = await User.find_by(session, name="Alice")
-    if user:
-        user.name = "Alicia"
-        await user.save(session=session)
-        await session.commit()
-```
-
-### Deleting Records
-
-```python
-# Assume 'session_factory' has been created from your ActiveEngine instance.
-async with session_factory() as session:
-    user = await User.find_by(session, name="Bob")
-    if user:
-        await User.delete(user, session=session)
-        await session.commit()
 ```
 
 ## Bulk Operations
 
-For high-performance inserts, use `bulk_insert`.
+For high-performance inserts, `bulk_insert` can be exposed through your repository.
 
 ```python
-# Assume 'session_factory' has been created from your ActiveEngine instance.
-from sqlalchemy.exc import IntegrityError
-
-async with session_factory() as session:
-    users_to_bulk_insert = [
-        User(name="Eve", email="eve@example.com"),
-        User(name="Frank", email="frank@example.com"),
-    ]
-
-    # This will raise an error if a user with the same email already exists
-    try:
-        await User.bulk_insert(users_to_bulk_insert, session)
-        await session.commit()
-    except IntegrityError:
-        print("A user with that email already exists.")
-        # The session context manager automatically rolls back on exception.
-
-    # To skip duplicates instead of failing:
-    conflicting_users = [
-        User(name="Alice", email="alice@example.com"),  # Assumes Alice exists
-        User(name="Grace", email="grace@example.com"),
-    ]
-    # 'on_conflict_index_elements' targets the unique constraint on the 'email' column
-    inserted = await User.bulk_insert(
-        conflicting_users, session, on_conflict="nothing", on_conflict_index_elements=["email"]
+# In your UserRepository:
+async def bulk_create(self, users_data: list[dict]) -> list[User]:
+    """Efficiently creates multiple users, skipping conflicts on email."""
+    users = [User(**data) for data in users_data]
+    inserted_users = await User.bulk_insert(
+        users,
+        self.session,
+        on_conflict="nothing",
+        on_conflict_index_elements=["email"], # Assumes unique constraint on email
+        commit=False # The business logic will handle the commit
     )
+    return inserted_users
+
+# In your business logic:
+async with session_factory() as session:
+    repo = UserRepository(session)
+    user_data = [
+        {"name": "Eve", "email": "eve@example.com"},
+        {"name": "Alice", "email": "alice@example.com"}, # Assumes Alice exists
+        {"name": "Frank", "email": "frank@example.com"},
+    ]
+    inserted = await repo.bulk_create(user_data)
     await session.commit()
-    # `inserted` will only contain Grace, as Alice was skipped.
+    # `inserted` will contain Eve and Frank, as Alice was skipped.
 ```
 
 ## Pydantic Schemas & FastAPI Integration
@@ -309,33 +316,62 @@ async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]
         yield session
 
 
+# --- Repository for Data Access ---
+# (You would typically place this in its own repositories.py file)
+class UserRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, user_in: "UserIn") -> User:
+        """Creates a new user instance and adds it to the session."""
+        user = User(**user_in.model_dump())
+        await user.save(self.session) # .save() is from QueryMixin
+        return user
+
+    async def get_by_id(self, user_id: uuid.UUID) -> User | None:
+        """Gets a user by their primary key."""
+        return await User.find(self.session, user_id) # .find() is from PKMixin
+
+    async def get_by_email(self, email: str) -> User | None:
+        """Gets a user by their email address."""
+        return await User.find_by(self.session, email=email)
+
+
+# --- Session and Repository Dependencies ---
+async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency to create and clean up a session per request."""
+    session_factory = request.app.state.session_factory
+    async with session_factory() as session:
+        yield session
+
+def get_user_repo(session: AsyncSession = Depends(get_db_session)) -> UserRepository:
+    """FastAPI dependency that provides a UserRepository instance."""
+    return UserRepository(session)
+
+
 # --- API Endpoints ---
 @app.post("/users/", response_model=UserOut, status_code=201)
-async def create_user(user_in: UserIn, session: AsyncSession = Depends(get_db_session)):
+async def create_user(user_in: UserIn, repo: UserRepository = Depends(get_user_repo)):
     """Create a new user."""
-    # The session is now managed by the dependency.
     # Check if user already exists
-    existing_user = await User.find_by(session, email=user_in.email)
+    existing_user = await repo.get_by_email(user_in.email)
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered.")
 
-    # Convert the input Pydantic model to a SQLAlchemy model instance
-    user_model = User(**user_in.model_dump())
+    # The repository handles creating the model instance
+    user = await repo.create(user_in)
 
-    # Save the model to the database
-    await user_model.save(session=session)
-    await session.commit()
+    # The business logic (endpoint) is responsible for the commit.
+    await repo.session.commit()
 
-    # The dependency handles rollback on exceptions.
-    # The user_model is now persisted and can be returned.
-    return user_model
+    # After commit, the user object is refreshed and can be returned.
+    return user
 
 
 @app.get("/users/{user_id}", response_model=UserOut)
-async def get_user(user_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
+async def get_user(user_id: uuid.UUID, repo: UserRepository = Depends(get_user_repo)):
     """Retrieve a user by their ID."""
-    # The session is now managed by the dependency.
-    user = await User.find(session, user_id)  # PKMixin provides .find()
+    user = await repo.get_by_id(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
@@ -394,28 +430,31 @@ new_user_instance = User.load(new_user_data)
 # new_user_instance is now a transient User object
 ```
 
-## Transactions and Session Management
+## Transactions and the Unit of Work
 
-Achemy requires explicit session management for all database operations. This ensures that every action is part of a well-defined transaction, providing data integrity and optimal performance.
+Achemy embraces SQLAlchemy's **Unit of Work** pattern. The `AsyncSession` object tracks all changes to your models (creations, updates, deletions) within a single transactional scope.
 
-The standard pattern is to get a session factory from your `ActiveEngine` instance and use it within an `async with` block. This block creates a session and a transaction. If the block completes successfully, you can commit the transaction with `await session.commit()`. If an exception occurs, the transaction is automatically rolled back.
+Your business logic is responsible for defining this scope. The standard pattern is to create a session from your session factory, pass it to your repositories, and then call `await session.commit()` once all operations for that unit of work are complete. The `async with` block ensures that the transaction is automatically rolled back if an exception occurs.
 
 ```python
-from models import City  # Assuming another model exists
+# repositories.py
+# (Define UserRepository and CityRepository here)
 
-
-async def complex_operation():
-    # Assume 'session_factory' has been created from your ActiveEngine instance.
+async def create_user_and_hometown(user_data: dict, city_data: dict):
+    # Assume 'session_factory' has been created.
     async with session_factory() as session:
+        user_repo = UserRepository(session)
+        city_repo = CityRepository(session)
+
         try:
-            user_frank = User(name="Frank", email="frank@acme.com")
-            # Pass the explicit session to all operations
-            await User.add(user_frank, session=session)
+            # Step 1: Create a new city
+            city = await city_repo.create(**city_data)
 
-            city = City(name="Frankfurt", population=750000)
-            await city.save(session=session)
-
-            # All operations will be committed together here
+            # Step 2: Create a new user
+            user = await user_repo.create(**user_data)
+            
+            # This is a single unit of work. Both the user and city will be
+            # created, or neither will be if an error occurs.
             await session.commit()
             print("Transaction committed successfully.")
 
@@ -426,25 +465,28 @@ async def complex_operation():
 
 ## Mixins
 
-Achemy provides helpful mixins to reduce boilerplate:
+Achemy provides helpful mixins to reduce boilerplate. To use their query helper methods, your model must also inherit from `QueryMixin`.
 
-*   **`PKMixin`**: Adds a standard `id: Mapped[uuid.UUID]` primary key with a default UUID factory. Also adds the `find(pk)` classmethod as a convenient alias for `get(pk)`.
-*   **`UpdateMixin`**: Adds `created_at` and `updated_at` timestamp columns with automatic management. Provides classmethods like `last_created()`, `first_created()`, `last_modified()`, and `get_since(datetime)`.
+*   **`PKMixin`**: Adds a standard `id: Mapped[uuid.UUID]` primary key. Adds the `find(pk)` classmethod as a convenient alias for `get(pk)`.
+*   **`UpdateMixin`**: Adds `created_at` and `updated_at` timestamp columns with automatic management. Provides classmethods like `last_created()`, `last_modified()`, and `get_since(datetime)`.
+*   **`QueryMixin`**: Provides all the query helper methods (`.select`, `.where`, `.all`, `.save`, etc.).
 
 ```python
 from sqlalchemy.orm import Mapped, mapped_column
 
-from achemy import Base, PKMixin, UpdateMixin
+from achemy import Base, PKMixin, QueryMixin, UpdateMixin
 
 
-class MyModel(Base, PKMixin, UpdateMixin):
+class MyModel(Base, PKMixin, UpdateMixin, QueryMixin):
     __tablename__ = "my_models"
     name: Mapped[str] = mapped_column()
 
 
 # MyModel now has id, created_at, updated_at columns and related methods.
-latest = await MyModel.last_modified()
-instance = await MyModel.find(some_uuid)
+# Assume you have a session from a session factory.
+async with session_factory() as session:
+    latest = await MyModel.last_modified(session)
+    instance = await MyModel.find(session, some_uuid)
 ```
 
 ## Examples
