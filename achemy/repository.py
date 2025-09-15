@@ -40,8 +40,22 @@ class BaseRepository[T]:
         return async_object_session(obj)
 
     async def _ensure_obj_session(self, obj: T) -> T:
-        if obj not in self.session:
-            return await self.session.merge(obj)
+        """
+        Ensures the object is in the current session. Raises a ValueError for detached instances.
+        Avoids session.merge() to promote explicit state management.
+        """
+        if obj in self.session:
+            return obj
+
+        # If the object has an identity, it's detached.
+        if sa.inspect(obj).identity is not None:
+            raise ValueError(
+                f"Object {obj} is detached from any session. "
+                "Explicitly fetch and update objects instead of re-using instances across sessions."
+            )
+
+        # If it has no identity, it's transient and can be safely added.
+        self.session.add(obj)
         return obj
 
     # --- Basic CRUD Operations ---
@@ -63,7 +77,7 @@ class BaseRepository[T]:
         self,
         values: list[dict[str, Any]],
         commit: bool = True,
-        on_conflict: Literal["fail", "nothing"] = "fail",
+        on_conflict: Literal["fail", "nothing", "update"] = "fail",
         on_conflict_index_elements: list[str] | None = None,
         returning: bool = True,
     ) -> Sequence[T] | None:
@@ -81,12 +95,22 @@ class BaseRepository[T]:
             stmt = pg_insert(self._model_cls)
             if on_conflict == "nothing":
                 stmt = stmt.on_conflict_do_nothing(index_elements=on_conflict_index_elements)
+            elif on_conflict == "update":
+                if not on_conflict_index_elements:
+                    raise ValueError("Argument 'on_conflict_index_elements' must be provided for 'update' policy.")
+                # All columns from the first row of values, excluding the index elements, will be updated.
+                update_cols = {
+                    k: getattr(stmt.excluded, k) for k in values[0] if k not in on_conflict_index_elements
+                }
+                if not update_cols:
+                    raise ValueError("No columns specified to update for 'on_conflict'='update'.")
+                stmt = stmt.on_conflict_do_update(index_elements=on_conflict_index_elements, set_=update_cols)
             elif on_conflict != "fail":
                 raise NotImplementedError(f"on_conflict='{on_conflict}' is not supported for dialect '{dialect_name}'.")
         else:
             stmt = sa.insert(self._model_cls)
             # For other dialects, only 'fail' is supported by default.
-            if on_conflict != "fail":
+            if on_conflict not in ("fail", "nothing"):
                 raise NotImplementedError(f"on_conflict='{on_conflict}' is not supported for dialect '{dialect_name}'.")
 
         if returning:
@@ -121,12 +145,20 @@ class BaseRepository[T]:
 
     async def delete(self, obj: T, commit: bool = True) -> None:
         try:
+            # For delete, we must ensure the object is in the session first.
+            # Unlike other methods, we can't operate on a transient instance.
+            if sa.inspect(obj).transient:
+                logger.warning(f"Attempted to delete a transient instance {obj}, ignoring.")
+                return
+
             obj_in_session = await self._ensure_obj_session(obj)
             await self.session.delete(obj_in_session)
+
             if commit:
                 await self.session.commit()
             else:
-                await self.session.flush([obj_in_session])
+                # Flush to send the DELETE to the DB without ending the transaction.
+                await self.session.flush()
         except SQLAlchemyError as e:
             logger.error(f"Error deleting {obj}: {e}", exc_info=True)
             raise e
@@ -220,21 +252,19 @@ class BaseRepository[T]:
         Returns:
             The first matching model instance or None.
         """
+        if not kwargs:
+            raise ValueError("find_by() requires at least one keyword argument for filtering.")
+
         mapper_props = {p.key for p in self.__mapper__.iterate_properties}
 
-        # Warn about keys that are not mapped properties
+        # Fail fast on keys that are not mapped properties
         unknown_keys = set(kwargs.keys()) - mapper_props
         if unknown_keys:
-            logger.warning(
-                "find_by called with keys that are not mapped properties and will be ignored: %s",
-                sorted(list(unknown_keys)),
+            raise AttributeError(
+                f"{self._model_cls.__name__} does not have attribute(s): {', '.join(sorted(list(unknown_keys)))}"
             )
 
-        filters = [getattr(self._model_cls, key) == value for key, value in kwargs.items() if key in mapper_props]
-
-        if not filters:
-            logger.warning("find_by() called with no valid filtering criteria. Returning None.")
-            return None
+        filters = [getattr(self._model_cls, key) == value for key, value in kwargs.items()]
 
         query = self.select().where(*filters)
         return await self.first(query=query)

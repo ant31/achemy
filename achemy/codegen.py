@@ -140,22 +140,22 @@ def generate_schemas_from_module_code(module_path: str) -> str:
     all_imports = set()
     all_schema_names = []
 
-    # Get all classes from the module, without pre-filtering.
-    model_classes = [obj for _, obj in inspect.getmembers(module, inspect.isclass)]
+    # Explicitly find concrete (non-abstract) subclasses of AlchemyModel.
+    model_classes = []
+    for _, obj in inspect.getmembers(module, inspect.isclass):
+        is_alchemy_model = inspect.isclass(obj) and issubclass(obj, AlchemyModel)
+        is_concrete_model = hasattr(obj, "__mapper__") and not obj.__mapper__.is_abstract
+
+        if is_alchemy_model and is_concrete_model:
+            model_classes.append(obj)
 
     model_classes.sort(key=lambda x: x.__name__)  # Sort for consistent output
 
     for model_cls in model_classes:
-        try:
-            # Attempt to generate schema; skip if it's not a valid model.
-            schema_code, imports = generate_pydantic_code(model_cls)
-            all_schema_codes.append(schema_code)
-            all_imports.update(imports)
-            all_schema_names.append(f"{model_cls.__name__}Schema")
-        except (AttributeError, ValueError):
-            # This class is not a valid AlchemyModel (e.g., no `pydantic_schema`
-            # or not mapped by SQLAlchemy), so we silently skip it.
-            pass
+        schema_code, imports = generate_pydantic_code(model_cls)
+        all_schema_codes.append(schema_code)
+        all_imports.update(imports)
+        all_schema_names.append(f"{model_cls.__name__}Schema")
 
     if not all_schema_codes:
         return f"# No concrete AlchemyModel subclasses found in {module_path}"
