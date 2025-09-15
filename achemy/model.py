@@ -103,6 +103,9 @@ class AlchemyModel(AsyncAttrs):
             # Get names of attributes corresponding to mapped columns
             col_prop_keys = {p.key for p in self.__mapper__.iterate_properties if isinstance(p, ColumnProperty)}
 
+            # Identify columns with server-side defaults to handle them specially for new instances
+            server_defaulted_keys = {c.key for c in self.__mapper__.columns if c.server_default is not None}
+
             # Filter keys if 'fields' is specified
             keys_to_include = col_prop_keys
             if fields is not None:
@@ -114,8 +117,16 @@ class AlchemyModel(AsyncAttrs):
             # Populate data dictionary, handling potential deferred loading issues
             for key in keys_to_include:
                 try:
+                    value = getattr(self, key)
+
+                    # For new objects, if a server-defaulted column is None,
+                    # don't include it in the dict. This allows the database
+                    # to apply its default value during bulk inserts.
+                    if key in server_defaulted_keys and value is None:
+                        continue
+
                     # Accessing the attribute might trigger loading if deferred
-                    data[key] = getattr(self, key)
+                    data[key] = value
                 except AttributeError:
                     # If attribute is not present (e.g., a server-defaulted column
                     # on a new instance), skip it so the DB can apply the default.
