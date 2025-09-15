@@ -1,4 +1,5 @@
 import logging
+import warnings
 from typing import Any, ClassVar, Self
 
 from pydantic_core import to_jsonable_python
@@ -205,8 +206,17 @@ class AlchemyModel(AsyncAttrs):
         Note:
             This method generates a Pydantic model at runtime, which cannot be
             understood by static type checkers like Mypy. For type-safe applications,
-            it is strongly recommended to define Pydantic schemas manually.
+            it is strongly recommended to use the `achemy generate-schemas`
+            command-line utility to generate a static schema file.
         """
+        warnings.warn(
+            (
+                f"{cls.__name__}.pydantic_schema() is intended for prototyping and dynamic use cases only. "
+                "For better type safety and performance, generate static schemas with 'achemy generate-schemas'."
+            ),
+            UserWarning,
+            stacklevel=2,
+        )
         if not cls.__pydantic_initialized__:
             cls.__pydantic_schema__ = Schema[cls]
             # Initialize the Pydantic schema if not already done
@@ -221,7 +231,16 @@ class AlchemyModel(AsyncAttrs):
         Note:
             This method uses a Pydantic model generated at runtime, which cannot be
             understood by static type checkers like Mypy. For type-safe applications,
-            it is strongly recommended to define Pydantic schemas manually and use
+            it is strongly recommended to define Pydantic schemas manually (using the
+            `achemy generate-schemas` CLI) and then use
             `YourSchema.model_validate(self)` for conversion.
         """
+        warnings.warn(
+            (
+                f"{self.__class__.__name__}.to_pydantic() is intended for prototyping only. "
+                "For production, generate static schemas with 'achemy generate-schemas' and use `YourSchema.model_validate(self)`."
+            ),
+            UserWarning,
+            stacklevel=2,
+        )
         return self.pydantic_schema()(**self.to_dict())

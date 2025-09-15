@@ -365,26 +365,49 @@ async def get_user(user_id: uuid.UUID, repo: UserRepository = Depends(get_user_r
     return user
 ```
 
-### Automatic Schema Generation (For Prototyping)
+### Schema Generation with the CLI (Recommended)
 
-Achemy provides a convenience method, `Model.pydantic_schema()`, to generate a Pydantic schema from a model at runtime. This can be useful for quick prototyping or internal tools where strict type safety is not a primary concern.
+To bridge the gap between SQLAlchemy models and Pydantic schemas without sacrificing type safety, Achemy includes a command-line tool to automatically generate static, type-safe Pydantic models from your `AlchemyModel` definitions.
 
-```python
-from models import User
+This is the recommended approach for integrating with APIs and ensuring your code is fully type-checkable.
 
-# Get the auto-generated Pydantic schema class
-UserSchema = User.pydantic_schema()
+#### Step 1: Install Typer
 
-# Convert a model instance directly to a Pydantic instance
-# Assume 'session_factory' has been created from your ActiveEngine instance.
-async with session_factory() as session:
-    user_instance = await User.find_by(session, name="Alice")
-    if user_instance:
-        pydantic_user = user_instance.to_pydantic()
-        print(pydantic_user.model_dump())
+The CLI tool requires `typer`.
+
+```bash
+pip install "typer[all]"
 ```
 
-> **Warning**: Because these schemas are created dynamically, static type checkers (like Mypy) and IDEs cannot infer their fields. This will lead to type errors and a lack of autocompletion. For any production-facing code, the recommended approach is to define schemas manually as shown in the FastAPI example above.
+#### Step 2: Run the Generator
+
+From your project's root directory, run the `generate-schemas` command. You need to provide the Python import path to your models module and specify an output file.
+
+```bash
+python -m achemy.cli generate-schemas your_app.models --output your_app/schemas.py
+```
+
+This command will inspect `your_app/models.py`, find all `AlchemyModel` subclasses, and generate a `your_app/schemas.py` file containing corresponding Pydantic `BaseModel` classes.
+
+#### Step 3: Use the Generated Schemas
+
+The generated file can be imported and used like any other manually created Pydantic schema, with full support for static analysis and autocompletion.
+
+```python
+# In your FastAPI app:
+from your_app.schemas import UserSchema
+
+@app.get("/users/{user_id}", response_model=UserSchema)
+async def get_user(user_id: uuid.UUID, repo: UserRepository = Depends(get_user_repo)):
+    # ...
+```
+
+### Dynamic Generation (For Prototyping Only)
+
+For quick experiments or in environments where static type checking is not a concern, the original dynamic generation methods are still available.
+
+`User.pydantic_schema()` and `user_instance.to_pydantic()` will now raise a `UserWarning` to remind you that this approach is not recommended for production code due to the lack of static type safety.
+
 To run this example, you would need `fastapi` and `uvicorn`:
 ```bash
 pip install fastapi "uvicorn[standard]"
