@@ -73,6 +73,31 @@ class BaseRepository[T]:
     async def save(self, obj: T, commit: bool = False) -> T:
         return await self.add(obj, commit)
 
+    def _build_pg_insert_stmt(
+        self,
+        values: list[dict[str, Any]],
+        on_conflict: Literal["fail", "nothing", "update"],
+        on_conflict_index_elements: list[str] | None,
+    ) -> Any:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert  # noqa: PLC0415
+
+        stmt = pg_insert(self._model_cls)
+        if on_conflict == "nothing":
+            return stmt.on_conflict_do_nothing(index_elements=on_conflict_index_elements)
+
+        if on_conflict == "update":
+            if not on_conflict_index_elements:
+                raise ValueError("Argument 'on_conflict_index_elements' must be provided for 'update' policy.")
+            update_cols = {k: getattr(stmt.excluded, k) for k in values[0] if k not in on_conflict_index_elements}
+            if not update_cols:
+                raise ValueError("No columns specified to update for 'on_conflict'='update'.")
+            return stmt.on_conflict_do_update(index_elements=on_conflict_index_elements, set_=update_cols)
+
+        if on_conflict != "fail":
+            dialect_name = self.session.bind.dialect.name if self.session.bind else "unknown"
+            raise NotImplementedError(f"on_conflict='{on_conflict}' is not supported for dialect '{dialect_name}'.")
+        return stmt
+
     async def bulk_insert(
         self,
         values: list[dict[str, Any]],
@@ -90,26 +115,9 @@ class BaseRepository[T]:
         dialect_name = self.session.bind.dialect.name if self.session.bind else "unknown"
 
         if dialect_name == "postgresql":
-            from sqlalchemy.dialects.postgresql import insert as pg_insert  # noqa: PLC0415
-
-            stmt = pg_insert(self._model_cls)
-            if on_conflict == "nothing":
-                stmt = stmt.on_conflict_do_nothing(index_elements=on_conflict_index_elements)
-            elif on_conflict == "update":
-                if not on_conflict_index_elements:
-                    raise ValueError("Argument 'on_conflict_index_elements' must be provided for 'update' policy.")
-                # All columns from the first row of values, excluding the index elements, will be updated.
-                update_cols = {
-                    k: getattr(stmt.excluded, k) for k in values[0] if k not in on_conflict_index_elements
-                }
-                if not update_cols:
-                    raise ValueError("No columns specified to update for 'on_conflict'='update'.")
-                stmt = stmt.on_conflict_do_update(index_elements=on_conflict_index_elements, set_=update_cols)
-            elif on_conflict != "fail":
-                raise NotImplementedError(f"on_conflict='{on_conflict}' is not supported for dialect '{dialect_name}'.")
+            stmt = self._build_pg_insert_stmt(values, on_conflict, on_conflict_index_elements)
         else:
             stmt = sa.insert(self._model_cls)
-            # For other dialects, only 'fail' is supported by default.
             if on_conflict not in ("fail", "nothing"):
                 raise NotImplementedError(f"on_conflict='{on_conflict}' is not supported for dialect '{dialect_name}'.")
 
@@ -120,8 +128,7 @@ class BaseRepository[T]:
             result = await self.session.execute(stmt, values)
             if commit:
                 await self.session.commit()
-            res = result.scalars().all() if returning and result else None
-            return res
+            return result.scalars().all() if returning and result else None
         except SQLAlchemyError as e:
             logger.error(f"Error during bulk_insert for {self._model_cls.__name__}: {e}", exc_info=True)
             raise e
