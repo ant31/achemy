@@ -2,7 +2,11 @@
 Provides the asynchronous SQLAlchemy engine manager for ActiveAlchemy.
 """
 
+import hashlib
+import json
 import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy.ext.asyncio import (
@@ -13,36 +17,48 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
-from achemy.config import PostgreSQLConfigSchema
+from achemy.config import DatabaseConfig
+from achemy.repository import BaseRepository, T
 
 logger = logging.getLogger(__name__)
 
 
-class ActiveEngine:
+def _generate_cache_key(data: dict[str, Any]) -> str:
+    """Creates a stable SHA256 hash from a dictionary for use as a cache key."""
+    if not data:
+        return "default"
+    # Using json.dumps with sort_keys=True ensures a canonical representation.
+    # This will raise a TypeError for non-serializable types, which is
+    # the desired behavior to enforce passing of simple, serializable kwargs.
+    encoded = json.dumps(data, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+class AchemyEngine:
     """
-    Manages asynchronous SQLAlchemy engines and sessions for ActiveAlchemy.
+    Manages asynchronous SQLAlchemy engines and sessions for Achemy.
 
     This class handles the creation and configuration of AsyncEngine and
     async_sessionmaker based on a provided configuration schema.
     """
 
-    config: PostgreSQLConfigSchema
+    config: DatabaseConfig
     engine_kwargs: dict[str, Any]
     sessions: dict[str, dict[str, async_sessionmaker[AsyncSession]]]
     engines: dict[str, dict[str, AsyncEngine]]
 
-    def __init__(self, config: PostgreSQLConfigSchema, **kwargs: Any):
+    def __init__(self, config: DatabaseConfig, **kwargs: Any):
         """
-        Initializes the ActiveEngine.
+        Initializes the AchemyEngine.
 
         Args:
-            config: The configuration object (e.g., PostgreSQLConfigSchema).
+            config: The configuration object (e.g., DatabaseConfig).
             **kwargs: Additional keyword arguments to pass to the engine creator.
         """
-        if not isinstance(config, PostgreSQLConfigSchema):
-            raise TypeError("config must be an instance of PostgreSQLConfigSchema")
+        if not isinstance(config, DatabaseConfig):
+            raise TypeError("config must be an instance of DatabaseConfig")
         self.config = config
-        logger.debug(f"Initializing ActiveEngine with config: {config}")
+        logger.debug(f"Initializing AchemyEngine with config: {config}")
         self.engine_kwargs = self._prep_engine_arguments(kwargs)
         self.sessions = {}
         self.engines = {}
@@ -142,7 +158,7 @@ class ActiveEngine:
 
         # Create a unique key for this engine configuration
         engine_key = f"{database}_{schema}_{isolation_level or 'default'}"
-        engine_conf_key = str(sorted(kwargs.items()))  # Key based on extra kwargs
+        engine_conf_key = _generate_cache_key(kwargs)  # Key based on extra kwargs
         if engine_key not in self.engines:
             self.engines[engine_key] = {}
 
@@ -198,8 +214,8 @@ class ActiveEngine:
 
         # Use same keying logic as get_engine for consistency
         engine_key = f"{database}_{schema}_{isolation_level or 'default'}"
-        engine_conf_key = str(sorted(engine_kwargs.items()))  # Key based on engine kwargs
-        session_conf_key = str(sorted(session_kwargs.items()))  # Key based on session kwargs
+        engine_conf_key = _generate_cache_key(engine_kwargs)  # Key based on engine kwargs
+        session_conf_key = _generate_cache_key(session_kwargs)  # Key based on session kwargs
 
         # Ensure outer dictionary exists
         if engine_key not in self.sessions:
@@ -251,3 +267,28 @@ class ActiveEngine:
         self.engines.clear()
         self.sessions.clear()
         logger.info(f"Disposed {disposed_count} engine(s).")
+
+    @asynccontextmanager
+    async def repository(self, model_cls: type[T]) -> AsyncGenerator[BaseRepository[T], None]:
+        """
+        Provides a repository instance within a managed session context.
+
+        This convenience method is ideal for simple operations or scripts where
+        explicit session management is not required. It creates a session,
+        yields a generic repository, and handles commit/rollback automatically.
+
+        Args:
+            model_cls: The AlchemyModel subclass for the repository.
+
+        Yields:
+            A BaseRepository instance for the specified model.
+        """
+        _engine, session_factory = self.session()
+        async with session_factory() as session:
+            repo = BaseRepository(session, model_cls)
+            try:
+                yield repo
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise

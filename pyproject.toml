@@ -2,36 +2,55 @@
 name = "achemy"
 version = "0.2.2"
 description = ""
-authors = [{email="2t.antoine@gmail.com", name="ant31"}]
-license = {text="Apache-2.0"}
+authors = [{ name = "ant31", email = "2t.antoine@gmail.com" }]
+requires-python = ">=3.11,<4"
 readme = "README.md"
-
-requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
 dependencies = [
-             "sqlalchemy (>=2)",
-             "pydantic (>=2)",
-             "asyncpg",
-             "alembic (>=1.15.2,<2.0.0)",
-             ]
+    "sqlalchemy (>=2)",
+    "pydantic (>=2)",
+    "alembic (>=1.15.2,<2.0.0)",
+]
 
-[tool.poetry.group.dev.dependencies]
-pyreadline = "*"
-requests = "*"
-pyright = "*"
-black = "*"
-ipython = "*"
-pylint = "*"
-pyre-check = "*"
-types-requests = "*"
-isort = "*"
-pytest = "*"
-coverage = "*"
-pytest-cov = "*"
-pytest-ordering = "*"
-ruff = "*"
-pylint-pydantic = "*"
-pytest-asyncio = "*"
-bump-my-version = "^1.1.2"
+[dependency-groups]
+dev = [
+    "pyreadline",
+    "requests",
+    "pyright",
+    "black",
+    "ipython",
+    "pylint",
+    "pyre-check",
+    "types-requests",
+    "isort",
+    "pytest",
+    "coverage",
+    "pytest-cov",
+    "pytest-ordering",
+    "ruff",
+    "pylint-pydantic",
+    "pytest-asyncio",
+    "rich",
+    "typer",
+    "asyncpg",
+    "bump-my-version>=1.1.2,<2",
+]
+
+[project.optional-dependencies]
+pg = ["asyncpg"]
+cli = [
+    "rich",
+    "typer"
+]
+all = [
+    "rich",
+    "typer",
+    "asyncpg"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.black]
 line-length = 120
@@ -44,16 +63,10 @@ profile = "black"
 line_length = 120
 skip_gitignore = true
 
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 # asyncio_default_fixture_loop_scope="function"
 asyncio_default_fixture_loop_scope = "session"
-
 
 [tool.bumpversion]
 current_version = "0.2.2"
@@ -71,6 +84,7 @@ allow_dirty = true
 commit = false
 message = "Bump version: {current_version} → {new_version}"
 commit_args = ""
+
 [[tool.bumpversion.files]]
 filename = 'achemy/__init__.py'
 search = "__version__ = \"{current_version}\""

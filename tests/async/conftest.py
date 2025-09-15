@@ -6,14 +6,14 @@ import sqlalchemy
 from sqlalchemy import String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from achemy import ActiveEngine, ActiveRecord, Base, PostgreSQLConfigSchema
+from achemy import AchemyEngine, Base, DatabaseConfig
 
 
 # Database configuration for tests
 @pytest.fixture(scope="session")
 def db_config():
     """Get database configuration from environment variables or use defaults"""
-    return PostgreSQLConfigSchema(
+    return DatabaseConfig(
         user=os.environ.get("TEST_DB_USER", "activealchemy"),
         password=os.environ.get("TEST_DB_PASSWORD", "activealchemy"),
         host=os.environ.get("TEST_DB_HOST", "localhost"),
@@ -31,9 +31,9 @@ async def async_engine(db_config):
     db_config.driver = "asyncpg"
     db_config.params = {"ssl": "disable", "timeout": 5}
     print("Creating async engine...")
-    engine = ActiveEngine(db_config)
-    ActiveRecord.set_engine(engine)
-    print("Set Engine")
+    engine = AchemyEngine(db_config)
+    # ActiveRecord has been removed; the engine is now passed to tests
+    # via the 'async_engine' fixture where needed.
     yield engine
 
     print("\nDisposing async engines...") # Add print for debugging test runs
@@ -46,7 +46,8 @@ async def acreate_tables(async_engine):
     """Create all tables defined in Base.metadata once per session."""
     print("acreate_tables: Creating all tables...")
     async with async_engine.engine().begin() as conn:
-        # Create all tables associated with the Base metadata
+        # Drop and create all tables associated with the Base metadata
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     print("acreate_tables: All tables created.")
     yield # Let the session run
@@ -75,7 +76,7 @@ def test_model():
 async def setup_select(async_engine, test_model): # Removed aclean_tables
     """Set up select tests"""
     print("setup_select")
-    TestModel.set_engine(async_engine)
+    # TestModel.set_engine(async_engine)  # No longer needed with repository pattern
 
     # Clean up
     async with async_engine.engine().begin() as conn:
@@ -110,7 +111,8 @@ async def aclean_tables(async_engine, acreate_tables): # Depend on acreate_table
     print("aclean: Cleaning tables before session...")
     # Use the engine manager provided by the fixture
     # Get a session using the globally set engine manager
-    async with await ActiveRecord.get_session() as session:
+    _db_engine, session_factory = async_engine.session()
+    async with session_factory() as session:
         print("Cleaning tables...")
         async with session.begin(): # Use a transaction for cleanup
             print("Cleaning tables in transaction...")
@@ -129,7 +131,8 @@ async def aclean_tables(async_engine, acreate_tables): # Depend on acreate_table
 
     # Add cleanup *after* the session as well to ensure clean state
     print("aclean: Cleaning tables post-session...")
-    async with await ActiveRecord.get_session() as session:
+    _db_engine, session_factory = async_engine.session()
+    async with session_factory() as session:
         print("Cleaning tables post-session...")
         async with session.begin():
             print("Cleaning tables post-session in transaction...")

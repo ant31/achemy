@@ -7,27 +7,28 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlalchemy.pool import NullPool
 
-from achemy import ActiveEngine, PostgreSQLConfigSchema
+from achemy import AchemyEngine, DatabaseConfig
+from achemy.engine import _generate_cache_key
 
 # --- Fixtures ---
 
 @pytest.fixture
 def minimal_config():
-    """Provides a minimal valid PostgreSQLConfigSchema."""
-    return PostgreSQLConfigSchema(db="testdb", user="testuser", password="pw", host="localhost")
+    """Provides a minimal valid DatabaseConfig."""
+    return DatabaseConfig(db="testdb", user="testuser", password="pw", host="localhost")
 
 
 @pytest.fixture
 def engine_manager(minimal_config):
-    """Provides an ActiveEngine instance initialized with minimal config."""
-    return ActiveEngine(config=minimal_config)
+    """Provides an AchemyEngine instance initialized with minimal config."""
+    return AchemyEngine(config=minimal_config)
 
 
 # --- Test Cases ---
 
 def test_engine_initialization(minimal_config):
-    """Test ActiveEngine initialization with valid config."""
-    engine = ActiveEngine(config=minimal_config, pool_size=5) # Pass extra kwarg
+    """Test AchemyEngine initialization with valid config."""
+    engine = AchemyEngine(config=minimal_config, pool_size=5) # Pass extra kwarg
     assert engine.config == minimal_config
     assert engine.engines == {}
     assert engine.sessions == {}
@@ -41,14 +42,14 @@ def test_engine_initialization(minimal_config):
 
 
 def test_engine_initialization_invalid_config():
-    """Test ActiveEngine initialization with invalid config type."""
-    with pytest.raises(TypeError, match="config must be an instance of PostgreSQLConfigSchema"):
-        ActiveEngine(config={"db": "wrong_type"})
+    """Test AchemyEngine initialization with invalid config type."""
+    with pytest.raises(TypeError, match="config must be an instance of DatabaseConfig"):
+        AchemyEngine(config={"db": "wrong_type"})
 
 
 def test_prep_engine_arguments_defaults(minimal_config):
     """Test _prep_engine_arguments applies defaults correctly."""
-    engine = ActiveEngine(config=minimal_config)
+    engine = AchemyEngine(config=minimal_config)
     kwargs = engine._prep_engine_arguments({})
     assert kwargs["poolclass"] is NullPool
     assert kwargs["echo"] is False
@@ -59,7 +60,7 @@ def test_prep_engine_arguments_defaults(minimal_config):
 
 def test_prep_engine_arguments_overrides(minimal_config):
     """Test _prep_engine_arguments respects explicit overrides."""
-    engine = ActiveEngine(
+    engine = AchemyEngine(
         config=minimal_config,
         echo=True, # Override echo
         connect_args={"timeout": 5, "server_settings": {"application_name": "test_app"}} # Override timeout
@@ -79,14 +80,14 @@ def test_prep_engine_arguments_overrides(minimal_config):
 def test_prep_engine_arguments_merges_config_kwargs(minimal_config):
     """Test _prep_engine_arguments merges kwargs from config object."""
     minimal_config.kwargs = {"pool_recycle": 3600} # Add kwarg to config
-    engine = ActiveEngine(config=minimal_config)
+    engine = AchemyEngine(config=minimal_config)
     kwargs = engine.engine_kwargs
     assert kwargs["pool_recycle"] == 3600
 
 
 def test_prep_engine_arguments_invalid_connect_args(minimal_config, caplog):
     """Test _prep_engine_arguments handles non-dict connect_args."""
-    engine = ActiveEngine(config=minimal_config, connect_args="not_a_dict")
+    engine = AchemyEngine(config=minimal_config, connect_args="not_a_dict")
     # Check that connect_args was reset to {} and default timeout applied
     assert isinstance(engine.engine_kwargs["connect_args"], dict)
     assert engine.engine_kwargs["connect_args"]["timeout"] == 10
@@ -99,7 +100,7 @@ def test_get_engine_creation_and_caching(engine_manager):
     # First call - creates engine
     engine1 = engine_manager.engine()
     assert isinstance(engine1, AsyncEngine)
-    default_conf_key = str(sorted({}.items())) # '[]'
+    default_conf_key = _generate_cache_key({})
     assert engine_manager.engines["testdb_public_default"][default_conf_key] is engine1
 
     # Second call with same params - reuses engine
@@ -112,7 +113,7 @@ def test_get_engine_creation_and_caching(engine_manager):
     engine3 = engine_manager.engine(database="otherdb")
     assert isinstance(engine3, AsyncEngine)
     assert engine1 is not engine3
-    default_conf_key = str(sorted({}.items())) # '[]'
+    default_conf_key = _generate_cache_key({})
     assert engine_manager.engines["otherdb_public_default"][default_conf_key] is engine3
     assert len(engine_manager.engines) == 2
 
@@ -121,7 +122,7 @@ def test_get_engine_creation_and_caching(engine_manager):
     assert isinstance(engine4, AsyncEngine)
     assert engine1 is not engine4
     assert engine3 is not engine4
-    default_conf_key = str(sorted({}.items())) # '[]'
+    default_conf_key = _generate_cache_key({})
     assert engine_manager.engines["testdb_otherschema_default"][default_conf_key] is engine4
     assert len(engine_manager.engines) == 3
 
@@ -129,7 +130,7 @@ def test_get_engine_creation_and_caching(engine_manager):
     engine5 = engine_manager.engine(isolation_level="READ_COMMITTED")
     assert isinstance(engine5, AsyncEngine)
     assert engine1 is not engine5
-    default_conf_key = str(sorted({}.items())) # '[]'
+    default_conf_key = _generate_cache_key({})
     assert engine_manager.engines["testdb_public_READ_COMMITTED"][default_conf_key] is engine5
     assert len(engine_manager.engines) == 4
 
@@ -137,7 +138,7 @@ def test_get_engine_creation_and_caching(engine_manager):
     engine6 = engine_manager.engine(pool_pre_ping=True)
     assert isinstance(engine6, AsyncEngine)
     assert engine1 is not engine6
-    engine_conf_key = str(sorted({"pool_pre_ping": True}.items()))
+    engine_conf_key = _generate_cache_key({"pool_pre_ping": True})
     assert engine_manager.engines["testdb_public_default"][engine_conf_key] is engine6
     assert len(engine_manager.engines["testdb_public_default"]) == 2 # Now two configs for this key
 
@@ -159,8 +160,8 @@ def test_get_session_creation_and_caching(engine_manager):
     engine1, sm1 = engine_manager.session()
     assert isinstance(engine1, AsyncEngine)
     assert isinstance(sm1, async_sessionmaker)
-    default_engine_conf_key = str(sorted({}.items())) # '[]'
-    default_session_conf_key = str(sorted({}.items())) # '[]'
+    default_engine_conf_key = _generate_cache_key({})
+    default_session_conf_key = _generate_cache_key({})
     assert engine_manager.engines["testdb_public_default"][default_engine_conf_key] is engine1
     session_key = f"{default_engine_conf_key}_{default_session_conf_key}"
     assert engine_manager.sessions["testdb_public_default"][session_key] is sm1
@@ -177,8 +178,8 @@ def test_get_session_creation_and_caching(engine_manager):
     assert engine1 is engine3 # Engine reused
     assert sm1 is not sm3 # New sessionmaker
     assert isinstance(sm3, async_sessionmaker)
-    default_engine_conf_key = str(sorted({}.items())) # '[]'
-    session_conf_key = str(sorted({"expire_on_commit": True}.items()))
+    default_engine_conf_key = _generate_cache_key({})
+    session_conf_key = _generate_cache_key({"expire_on_commit": True})
     new_session_key = f"{default_engine_conf_key}_{session_conf_key}"
     assert engine_manager.sessions["testdb_public_default"][new_session_key] is sm3
     assert len(engine_manager.sessions["testdb_public_default"]) == 2
@@ -188,8 +189,8 @@ def test_get_session_creation_and_caching(engine_manager):
     assert engine1 is not engine4 # New engine
     assert sm1 is not sm4 # New sessionmaker
     assert sm3 is not sm4
-    engine_conf_key = str(sorted({"pool_pre_ping": True}.items()))
-    default_session_conf_key = str(sorted({}.items())) # '[]'
+    engine_conf_key = _generate_cache_key({"pool_pre_ping": True})
+    default_session_conf_key = _generate_cache_key({})
     new_engine_key = "testdb_public_default" # Base key remains the same
     new_session_key_engine = f"{engine_conf_key}_{default_session_conf_key}"
     assert engine_manager.engines[new_engine_key][engine_conf_key] is engine4
@@ -202,8 +203,8 @@ def test_get_session_creation_and_caching(engine_manager):
 async def test_dispose_engines(engine_manager):
     """Test that dispose_engines clears internal caches and calls dispose."""
     # Create a couple of engines and sessions
-    engine1, sm1 = engine_manager.session()
-    engine2, sm2 = engine_manager.session(database="otherdb")
+    _engine1, _sm1 = engine_manager.session()
+    _engine2, _sm2 = engine_manager.session(database="otherdb")
 
     assert len(engine_manager.engines) == 2
     assert len(engine_manager.sessions) == 2
