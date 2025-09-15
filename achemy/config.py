@@ -43,8 +43,8 @@ class DatabaseConfig(BaseConfig):
 
         # Define dialect-specific default parameters
         default_params = {
-            # asyncpg uses 'sslmode' in the DSN query string
-            "postgresql": {"sslmode": "disable"},
+            # asyncpg uses 'ssl' in the DSN query string
+            "postgresql": {"ssl": "disable"},
         }
 
         # Start with defaults for the current dialect, if any

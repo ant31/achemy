@@ -17,11 +17,11 @@ def test_config():
     assert PostgresConfig.default_schema == "public"
 
 
-    assert PostgresConfig.uri() == "postgresql+asyncpg://achemy:achemy@localhost:5434/achemy-test?sslmode=disable"
+    assert PostgresConfig.uri() == "postgresql+asyncpg://achemy:achemy@localhost:5434/achemy-test?ssl=disable"
 
     PostgresConfig.port = 5435
-    assert PostgresConfig.uri() == "postgresql+asyncpg://achemy:achemy@localhost:5435/achemy-test?sslmode=disable"
-    PostgresConfig. params = {"sslmode": "require"}
-    assert PostgresConfig.uri() == "postgresql+asyncpg://achemy:achemy@localhost:5435/achemy-test?sslmode=require"
+    assert PostgresConfig.uri() == "postgresql+asyncpg://achemy:achemy@localhost:5435/achemy-test?ssl=disable"
+    PostgresConfig. params = {"ssl": "require"}
+    assert PostgresConfig.uri() == "postgresql+asyncpg://achemy:achemy@localhost:5435/achemy-test?ssl=require"
     PostgresConfig.driver = "asyncpg-other"
-    assert PostgresConfig.uri() == "postgresql+asyncpg-other://achemy:achemy@localhost:5435/achemy-test?sslmode=require"
+    assert PostgresConfig.uri() == "postgresql+asyncpg-other://achemy:achemy@localhost:5435/achemy-test?ssl=require"
