@@ -1,140 +1,85 @@
 import logging
-import warnings
 from collections.abc import Sequence
-from typing import Any, ClassVar, Literal, Self
+from typing import Any, Generic, Literal, TypeVar
 
 import sqlalchemy as sa
 import sqlalchemy.dialects.postgresql as sa_pg
 from sqlalchemy import FromClause, ScalarResult, Select, func
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_object_session,
-    async_sessionmaker,
-)
+from sqlalchemy.ext.asyncio import AsyncSession, async_object_session
 from sqlalchemy.orm import Mapper
 
-from achemy.engine import ActiveEngine
+from achemy.model import AlchemyModel
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T", bound=AlchemyModel)
 
-class QueryMixin:
+
+class BaseRepository(Generic[T]):
     """
-    An opt-in mixin that provides ActiveRecord-like query and CRUD methods.
+    A generic repository class providing common data access patterns.
     """
 
-    # --- Class Attributes ---
-    __table__: ClassVar[FromClause]  # Populated by SQLAlchemy mapper
-    __mapper__: ClassVar[Mapper[Any]]  # Populated by SQLAlchemy mapper
-    __active_engine__: ClassVar[ActiveEngine]
-    _session_factory: ClassVar[async_sessionmaker[AsyncSession] | None] = None
+    _model_cls: type[T]
+    session: AsyncSession
 
-    # --- Engine & Session Management (DEPRECATED) ---
-    @classmethod
-    def engine(cls) -> ActiveEngine:
-        warnings.warn(
-            (
-                "QueryMixin.engine() is deprecated. "
-                "Manage the ActiveEngine instance directly in your application."
-            ),
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        if not hasattr(cls, "__active_engine__") or cls.__active_engine__ is None:
-            raise ValueError(f"No active engine configured for class {cls.__name__}")
-        return cls.__active_engine__
+    def __init__(self, session: AsyncSession, model_cls: type[T]):
+        self.session = session
+        self._model_cls = model_cls
 
-    @classmethod
-    def set_engine(cls, engine: ActiveEngine):
-        warnings.warn(
-            (
-                "QueryMixin.set_engine() is deprecated. "
-                "Instantiate ActiveEngine and get sessions from it directly."
-            ),
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        if not isinstance(engine, ActiveEngine):
-            raise TypeError("Engine must be an instance of ActiveEngine")
-        cls.__active_engine__ = engine
-        _, session_factory = engine.session(schema=getattr(cls, "__schema__", "public"))
-        cls._session_factory = session_factory
-        logger.info(f"ActiveEngine and session factory set for {cls.__name__}")
+    @property
+    def __table__(self) -> FromClause:
+        return self._model_cls.__table__
 
-    @classmethod
-    def session_factory(cls) -> async_sessionmaker[AsyncSession]:
-        warnings.warn(
-            ("QueryMixin.session_factory() is deprecated."),
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        if cls._session_factory is None:
-            if hasattr(cls, "__active_engine__") and cls.__active_engine__:
-                cls.set_engine(cls.__active_engine__)
-                if cls._session_factory:
-                    return cls._session_factory
-            raise ValueError(f"Session factory not configured for {cls.__name__}.")
-        return cls._session_factory
-
-    @classmethod
-    def get_session(cls) -> AsyncSession:
-        warnings.warn(
-            ("QueryMixin.get_session() is deprecated."),
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        factory = cls.session_factory()
-        return factory()
+    @property
+    def __mapper__(self) -> Mapper[Any]:
+        return self._model_cls.__mapper__
 
     # --- Instance & Session Helpers ---
-    def obj_session(self) -> AsyncSession | None:
-        return async_object_session(self)
+    def obj_session(self, obj: T) -> AsyncSession | None:
+        return async_object_session(obj)
 
-    @classmethod
-    async def _ensure_obj_session(cls, obj: Self, session: AsyncSession) -> Self:
-        if obj not in session:
-            return await session.merge(obj)
+    async def _ensure_obj_session(self, obj: T) -> T:
+        if obj not in self.session:
+            return await self.session.merge(obj)
         return obj
 
     # --- Basic CRUD Operations ---
-    @classmethod
-    async def add(cls, obj: Self, session: AsyncSession, commit: bool = False) -> Self:
+    async def add(self, obj: T, commit: bool = False) -> T:
         try:
-            session.add(obj)
+            self.session.add(obj)
             if commit:
-                await session.commit()
-                await session.refresh(obj)
+                await self.session.commit()
+                await self.session.refresh(obj)
         except SQLAlchemyError as e:
             logger.error(f"Error adding {obj}: {e}", exc_info=True)
             raise e
         return obj
 
-    async def save(self, session: AsyncSession, commit: bool = False) -> Self:
-        return await self.add(self, session, commit)
+    async def save(self, obj: T, commit: bool = False) -> T:
+        return await self.add(obj, commit)
 
-    @classmethod
     async def bulk_insert(
-        cls: type[Self],
-        objs: list[Self],
-        session: AsyncSession,
+        self,
+        objs: list[T],
         commit: bool = True,
         on_conflict: Literal["fail", "nothing"] = "fail",
         on_conflict_index_elements: list[str] | None = None,
         fields: set[str] | None = None,
         returning: bool = True,
-    ) -> Sequence[Self] | None:
-        if not hasattr(cls, "__table__"):
-            raise TypeError(f"Class {cls.__name__} does not have a __table__ defined.")
+    ) -> Sequence[T] | None:
+        if not hasattr(self._model_cls, "__table__"):
+            raise TypeError(f"Class {self._model_cls.__name__} does not have a __table__ defined.")
 
         if not objs:
             return [] if returning else None
 
         values = [o.dump_model(with_meta=False, fields=fields) for o in objs]
-        dialect = session.bind.dialect.name if session.bind else "unknown"
+        dialect = self.session.bind.dialect.name if self.session.bind else "unknown"
 
         if dialect == "postgresql":
-            stmt = sa_pg.insert(cls)
+            stmt = sa_pg.insert(self._model_cls)
             if on_conflict == "nothing":
                 stmt = stmt.on_conflict_do_nothing(index_elements=on_conflict_index_elements)
             elif on_conflict != "fail":
@@ -142,150 +87,135 @@ class QueryMixin:
         else:
             if on_conflict != "fail":
                 raise NotImplementedError(f"on_conflict='{on_conflict}' is not supported for '{dialect}'.")
-            stmt = sa.insert(cls)
+            stmt = sa.insert(self._model_cls)
 
         insert_stmt = stmt.values(values)
         if returning:
-            insert_stmt = insert_stmt.returning(cls)
+            insert_stmt = insert_stmt.returning(self._model_cls)
 
         try:
-            result = await cls._execute_and_commit_bulk_statement(session, insert_stmt, commit)
+            result = await self._execute_and_commit_bulk_statement(insert_stmt, commit)
             res = result.scalars().all() if returning and result else None
             return res
         except SQLAlchemyError as e:
-            logger.error(f"Error during bulk_insert for {cls.__name__}: {e}", exc_info=True)
+            logger.error(f"Error during bulk_insert for {self._model_cls.__name__}: {e}", exc_info=True)
             raise e
 
-    @staticmethod
-    async def _execute_and_commit_bulk_statement(s: AsyncSession, stmt: Any, commit_flag: bool) -> Any:
-        result = await s.execute(stmt)
+    async def _execute_and_commit_bulk_statement(self, stmt: Any, commit_flag: bool) -> Any:
+        result = await self.session.execute(stmt)
         if commit_flag:
-            await s.commit()
+            await self.session.commit()
         return result
 
-    @classmethod
-    async def add_all(cls, objs: list[Self], session: AsyncSession, commit: bool = True) -> Sequence[Self]:
+    async def add_all(self, objs: list[T], commit: bool = True) -> Sequence[T]:
         if not objs:
             return []
         try:
-            session.add_all(objs)
+            self.session.add_all(objs)
             if commit:
-                await session.commit()
+                await self.session.commit()
                 for obj in objs:
                     try:
-                        await session.refresh(obj)
+                        await self.session.refresh(obj)
                     except Exception as refresh_err:
                         logger.warning(f"Failed to refresh object {obj} after commit: {refresh_err}")
             return objs
         except SQLAlchemyError as e:
-            logger.error(f"Error during add_all for {cls.__name__}: {e}", exc_info=True)
+            logger.error(f"Error during add_all for {self._model_cls.__name__}: {e}", exc_info=True)
             raise e
 
-    @classmethod
-    async def delete(cls, obj: Self, session: AsyncSession, commit: bool = True) -> None:
+    async def delete(self, obj: T, commit: bool = True) -> None:
         try:
-            obj_in_session = await cls._ensure_obj_session(obj, session)
-            await session.delete(obj_in_session)
+            obj_in_session = await self._ensure_obj_session(obj)
+            await self.session.delete(obj_in_session)
             if commit:
-                await session.commit()
+                await self.session.commit()
             else:
-                await session.flush([obj_in_session])
+                await self.session.flush([obj_in_session])
         except SQLAlchemyError as e:
             logger.error(f"Error deleting {obj}: {e}", exc_info=True)
             raise e
 
     # --- Instance State Management ---
-    async def refresh(self, session: AsyncSession, attribute_names: Sequence[str] | None = None) -> Self:
-        obj_in_session = await self.__class__._ensure_obj_session(self, session)
+    async def refresh(self, obj: T, attribute_names: Sequence[str] | None = None) -> T:
+        obj_in_session = await self._ensure_obj_session(obj)
         try:
-            await session.refresh(obj_in_session, attribute_names=attribute_names)
+            await self.session.refresh(obj_in_session, attribute_names=attribute_names)
         except SQLAlchemyError as e:
             logger.error(f"Error refreshing instance {obj_in_session}: {e}", exc_info=True)
             raise e
         return obj_in_session
 
-    async def expire(self, session: AsyncSession, attribute_names: Sequence[str] | None = None) -> Self:
-        obj_in_session = await self.__class__._ensure_obj_session(self, session)
-        session.expire(obj_in_session, attribute_names=attribute_names)
+    async def expire(self, obj: T, attribute_names: Sequence[str] | None = None) -> T:
+        obj_in_session = await self._ensure_obj_session(obj)
+        self.session.expire(obj_in_session, attribute_names=attribute_names)
         return obj_in_session
 
-    async def expunge(self, session: AsyncSession) -> Self:
-        obj_in_session = await self.__class__._ensure_obj_session(self, session)
-        session.expunge(obj_in_session)
+    async def expunge(self, obj: T) -> T:
+        obj_in_session = await self._ensure_obj_session(obj)
+        self.session.expunge(obj_in_session)
         return obj_in_session
 
-    async def is_modified(self, session: AsyncSession) -> bool:
-        obj_in_session = await self.__class__._ensure_obj_session(self, session)
-        return obj_in_session in session.dirty
+    async def is_modified(self, obj: T) -> bool:
+        obj_in_session = await self._ensure_obj_session(obj)
+        return obj_in_session in self.session.dirty
 
     # --- Querying Methods ---
-    @classmethod
-    def select(cls, *args: Any, **kwargs: Any) -> Select[tuple[Self]]:
-        return sa.select(cls, *args, **kwargs)
+    def select(self, *args: Any, **kwargs: Any) -> Select[tuple[T]]:
+        return sa.select(self._model_cls, *args, **kwargs)
 
-    @classmethod
-    def where(cls, *args: Any, **kwargs: Any) -> Select[tuple[Self]]:
-        query = cls.select()
-        mapper_props = {p.key for p in cls.__mapper__.iterate_properties}
-        filters = [getattr(cls, key) == value for key, value in kwargs.items() if key in mapper_props]
+    def where(self, *args: Any, **kwargs: Any) -> Select[tuple[T]]:
+        query = self.select()
+        mapper_props = {p.key for p in self.__mapper__.iterate_properties}
+        filters = [getattr(self._model_cls, key) == value for key, value in kwargs.items() if key in mapper_props]
         all_filters = list(args) + filters
         if all_filters:
             query = query.where(*all_filters)
         return query
 
-    @classmethod
-    async def _execute_query(cls, query: Select[tuple[Self]], session: AsyncSession) -> ScalarResult[Self]:
-        result = await session.execute(query)
+    async def _execute_query(self, query: Select[tuple[T]]) -> ScalarResult[T]:
+        result = await self.session.execute(query)
         return result.scalars()
 
-    @classmethod
-    async def all(
-        cls, session: AsyncSession, query: Select[tuple[Self]] | None = None, limit: int | None = None
-    ) -> Sequence[Self]:
-        q = query if query is not None else cls.select()
+    async def all(self, query: Select[tuple[T]] | None = None, limit: int | None = None) -> Sequence[T]:
+        q = query if query is not None else self.select()
         if limit is not None:
             q = q.limit(limit)
-        result = await cls._execute_query(q, session)
+        result = await self._execute_query(q)
         return result.all()
 
-    @classmethod
-    async def first(
-        cls, session: AsyncSession, query: Select[tuple[Self]] | None = None, order_by: Any = None
-    ) -> Self | None:
-        q = query if query is not None else cls.select()
+    async def first(self, query: Select[tuple[T]] | None = None, order_by: Any = None) -> T | None:
+        q = query if query is not None else self.select()
         if order_by is None:
             try:
-                pk_col = cls.__table__.primary_key.columns.values()[0]
+                pk_col = self.__table__.primary_key.columns.values()[0]
                 q = q.order_by(pk_col.asc())
             except (AttributeError, IndexError):
                 pass
         else:
             q = q.order_by(order_by)
         q = q.limit(1)
-        result = await cls._execute_query(q, session)
+        result = await self._execute_query(q)
         return result.first()
 
-    @classmethod
-    async def find_by(cls, session: AsyncSession, *args, **kwargs) -> Self | None:
-        query = cls.where(*args, **kwargs)
-        return await cls.first(session=session, query=query)
+    async def find_by(self, *args: Any, **kwargs: Any) -> T | None:
+        query = self.where(*args, **kwargs)
+        return await self.first(query=query)
 
-    @classmethod
-    async def get(cls, session: AsyncSession, pk: Any) -> Self | None:
+    async def get(self, pk: Any) -> T | None:
         try:
-            return await session.get(cls, pk)
+            return await self.session.get(self._model_cls, pk)
         except SQLAlchemyError as e:
-            logger.error(f"Error getting {cls.__name__} by PK {pk}: {e}", exc_info=True)
+            logger.error(f"Error getting {self._model_cls.__name__} by PK {pk}: {e}", exc_info=True)
             raise e
 
-    @classmethod
-    async def count(cls, session: AsyncSession, query: Select[Self] | None = None) -> int:
-        q = query if query is not None else cls.select()
+    async def count(self, query: Select[T] | None = None) -> int:
+        q = query if query is not None else self.select()
         count_q = sa.select(func.count()).select_from(q.order_by(None).limit(None).offset(None).subquery())
         try:
-            result = await session.execute(count_q)
+            result = await self.session.execute(count_q)
             count_scalar = result.scalar_one_or_none()
             return count_scalar if count_scalar is not None else 0
         except SQLAlchemyError as e:
-            logger.error(f"Error executing count query for {cls.__name__}: {e}", exc_info=True)
+            logger.error(f"Error executing count query for {self._model_cls.__name__}: {e}", exc_info=True)
             raise e

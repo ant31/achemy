@@ -4,10 +4,9 @@ from sqlalchemy import Boolean, ForeignKey, Integer, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, MappedAsDataclass, mapped_column, relationship
 
 from achemy import AlchemyModel, PKMixin, UpdateMixin
-from achemy.query import QueryMixin
 
 
-class ADemoBase(MappedAsDataclass, DeclarativeBase, AlchemyModel, QueryMixin):
+class ADemoBase(MappedAsDataclass, DeclarativeBase, AlchemyModel):
     pass
 
 

@@ -31,10 +31,7 @@ class PKMixin(MappedAsDataclass):
     @classmethod
     async def find(cls, session: AsyncSession, pk_uuid: uuid.UUID) -> Self | None:
         """Return the instance with the given UUID primary key."""
-        # This method requires the QueryMixin to be included in the model.
-        if not hasattr(cls, "get"):
-            raise TypeError(f"The .find() method requires {cls.__name__} to inherit from QueryMixin.")
-        return await cls.get(session, pk_uuid)
+        return await session.get(cls, pk_uuid)
 
 
 class UpdateMixin(MappedAsDataclass):
@@ -52,55 +49,3 @@ class UpdateMixin(MappedAsDataclass):
     def updated_at(cls) -> Mapped[datetime]:
         return mapped_column(default=func.now(), onupdate=func.now(), init=False)
 
-    @classmethod
-    async def last_modified(cls, session: AsyncSession) -> Self | None:
-        """Returns the most recently updated instance."""
-        if not hasattr(cls, "select"):
-            raise TypeError(f"The .last_modified() method requires {cls.__name__} to inherit from QueryMixin.")
-        logger.debug(f"Finding last modified record for {cls.__name__}")
-        query = cls.select().order_by(cls.updated_at.desc())
-        return await cls.first(session=session, query=query)  # Use first() with the query
-
-    @classmethod
-    async def last_created(cls, session: AsyncSession) -> Self | None:
-        """Returns the most recently created instance."""
-        if not hasattr(cls, "select"):
-            raise TypeError(f"The .last_created() method requires {cls.__name__} to inherit from QueryMixin.")
-        logger.debug(f"Finding last created record for {cls.__name__}")
-        query = cls.select().order_by(cls.created_at.desc())
-        return await cls.first(session=session, query=query)
-
-    @classmethod
-    async def first_created(cls, session: AsyncSession) -> Self | None:
-        """Returns the first created instance."""
-        if not hasattr(cls, "select"):
-            raise TypeError(f"The .first_created() method requires {cls.__name__} to inherit from QueryMixin.")
-        logger.debug(f"Finding first created record for {cls.__name__}")
-        query = cls.select().order_by(cls.created_at.asc())
-        return await cls.first(session=session, query=query)
-
-    @classmethod
-    async def get_since(
-        cls, session: AsyncSession, date: datetime, query: Select[tuple[Self]] | None = None
-    ) -> Sequence[Self]:
-        """
-        Returns all instances modified since a given datetime.
-
-        Args:
-            session: The active AsyncSession to execute with.
-            date: The datetime threshold (exclusive).
-            query: An optional base query to further filter.
-
-        Returns:
-            A sequence of model instances modified after the specified date.
-        """
-        if not hasattr(cls, "select"):
-            raise TypeError(f"The .get_since() method requires {cls.__name__} to inherit from QueryMixin.")
-        if query is None:
-            query = cls.select()
-
-        logger.debug(f"Finding {cls.__name__} records modified since {date}")
-        # Apply the date filter and order by modification date
-        filtered_query = query.where(cls.updated_at > date).order_by(cls.updated_at.desc())
-
-        return await cls.all(session=session, query=filtered_query)
