@@ -241,10 +241,8 @@ class BaseRepository[T]:
         filters = [getattr(self._model_cls, key) == value for key, value in kwargs.items() if key in mapper_props]
 
         if not filters:
-            logger.warning(
-                "find_by() called with no valid filtering criteria. This will return the first record in the table."
-            )
-            return await self.first()
+            logger.warning("find_by() called with no valid filtering criteria. Returning None.")
+            return None
 
         query = self.select().where(*filters)
         return await self.first(query=query)
