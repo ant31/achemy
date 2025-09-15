@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Integer, func
-from sqlalchemy.orm import Mapped, MappedAsDataclass, declared_attr, mapped_column
+from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
 logger = logging.getLogger(__name__)
 
