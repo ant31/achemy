@@ -144,7 +144,8 @@ def generate_schemas_from_module_code(module_path: str) -> str:
     model_classes = []
     for _, obj in inspect.getmembers(module, inspect.isclass):
         is_alchemy_model = inspect.isclass(obj) and issubclass(obj, AlchemyModel)
-        is_concrete_model = hasattr(obj, "__mapper__") and not obj.__mapper__.is_abstract
+        # The `__abstract__` flag on the class itself is the correct way to check.
+        is_concrete_model = hasattr(obj, "__mapper__") and not getattr(obj, "__abstract__", False)
 
         if is_alchemy_model and is_concrete_model:
             model_classes.append(obj)

@@ -61,9 +61,9 @@ class TestBaseRepository:
             not_found = await repo.find_by(name=f"nonexistent_{unique_id}")
             assert not_found is None
 
-            # Test find_by with non-mapped keys (should log a warning)
-            await repo.find_by(non_existent_key="some_value")
-            assert "not mapped properties and will be ignored" in caplog.text
+            # Test find_by with non-mapped keys (should raise AttributeError)
+            with pytest.raises(AttributeError, match="does not have attribute(s): non_existent_key"):
+                await repo.find_by(non_existent_key="some_value")
 
     async def test_all_and_count(self, async_engine, model_class, unique_id):
         """Test retrieving all entities and counting them."""

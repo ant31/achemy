@@ -41,21 +41,10 @@ class BaseRepository[T]:
 
     async def _ensure_obj_session(self, obj: T) -> T:
         """
-        Ensures the object is in the current session. Raises a ValueError for detached instances.
-        Avoids session.merge() to promote explicit state management.
+        Ensures the object is in the current session. Uses merge for detached instances.
         """
-        if obj in self.session:
-            return obj
-
-        # If the object has an identity, it's detached.
-        if sa.inspect(obj).identity is not None:
-            raise ValueError(
-                f"Object {obj} is detached from any session. "
-                "Explicitly fetch and update objects instead of re-using instances across sessions."
-            )
-
-        # If it has no identity, it's transient and can be safely added.
-        self.session.add(obj)
+        if obj not in self.session:
+            return await self.session.merge(obj)
         return obj
 
     # --- Basic CRUD Operations ---
@@ -111,6 +100,16 @@ class BaseRepository[T]:
 
         if not values:
             return [] if returning else None
+
+        # For models with client-side PK defaults (like UUIDPKMixin), ensure values have PKs.
+        pk_cols = self.__table__.primary_key.columns
+        pk_col_names = {c.name for c in pk_cols}
+        for value_dict in values:
+            for pk_col_name in pk_col_names:
+                if pk_col_name not in value_dict:
+                    # Instantiate the model to trigger the client-side default factory
+                    temp_instance = self._model_cls.load(value_dict)
+                    value_dict[pk_col_name] = getattr(temp_instance, pk_col_name)
 
         dialect_name = self.session.bind.dialect.name if self.session.bind else "unknown"
 

@@ -51,6 +51,9 @@ class TestCodegen:
         # Check that an abstract model does not have a schema
         assert "MockMixinBaseSchema" not in full_code
 
+        # Check for model rebuild calls
+        assert "MockCombinedModelSchema.model_rebuild()" in full_code
+
         # Check for collected imports at the top (sorted alphabetically)
         expected_imports = [
             "from datetime import datetime",
