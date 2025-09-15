@@ -13,10 +13,10 @@ __all__ = [
     "AlchemyModel",
     "Base",
     "BaseRepository",
-    "IntPKMixin",
     "DatabaseConfig",
+    "IntPKMixin",
+    "PGUUIDPKMixin",
     "Schema",
     "UUIDPKMixin",
     "UpdateMixin",
-    "PGUUIDPKMixin",
 ]
