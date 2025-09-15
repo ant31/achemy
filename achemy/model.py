@@ -17,8 +17,8 @@ class AlchemyModel(AsyncAttrs):
     Base model class with data handling and serialization helpers.
 
     Provides convenience methods for data conversion (`to_dict`, `dump_model`, etc.)
-    and Pydantic schema generation. Does not include any database interaction
-    methods; for that, see `achemy.query.QueryMixin`.
+    and Pydantic schema generation. Does not include database interaction
+    methods; for that, see `achemy.repository.BaseRepository`.
     """
 
     # --- Class Attributes ---
@@ -158,7 +158,10 @@ class AlchemyModel(AsyncAttrs):
     @classmethod
     def load(cls, data: dict[str, Any]) -> Self:
         """
-        Load an instance from a dictionary, setting only mapped attributes.
+        Load an instance from a dictionary by passing valid attributes to the constructor.
+
+        This method filters the input dictionary to include only keys that correspond
+        to mapped SQLAlchemy column properties, then instantiates the class with them.
 
         Args:
             data: The dictionary containing data to load.
@@ -168,6 +171,8 @@ class AlchemyModel(AsyncAttrs):
 
         Raises:
             ValueError: If the class is not mapped or data is not a dict.
+            TypeError: If instantiation fails due to missing required arguments or
+                       other constructor-related issues.
         """
         if not isinstance(data, dict):
             raise ValueError("Input 'data' must be a dictionary.")
@@ -175,21 +180,22 @@ class AlchemyModel(AsyncAttrs):
         if not hasattr(cls, "__mapper__"):
             raise ValueError(f"Cannot load data: Class {cls.__name__} is not mapped by SQLAlchemy.")
 
-        obj = cls()  # Create a new instance
-
-        # Get names of mapped column attributes
+        # Get names of mapped column attributes to ensure only valid fields are passed
         col_prop_keys = {p.key for p in cls.__mapper__.iterate_properties if isinstance(p, ColumnProperty)}
 
-        loaded_keys = set()
-        for key, value in data.items():
-            if key in col_prop_keys:
-                try:
-                    setattr(obj, key, value)
-                    loaded_keys.add(key)
-                except Exception as e:
-                    logger.warning(f"Failed to set attribute '{key}' on {cls.__name__} instance: {e}")
-            # else: ignore keys in the data dict that don't correspond to mapped columns
+        # Filter the input data to only include keys that are mapped columns
+        filtered_data = {key: value for key, value in data.items() if key in col_prop_keys}
 
-        logger.debug(f"Loaded {len(loaded_keys)} attributes onto new {cls.__name__} instance: {loaded_keys}")
-        return obj
+        # For debugging, it can be useful to know which keys were ignored
+        ignored_keys = set(data.keys()) - set(filtered_data.keys())
+        if ignored_keys:
+            logger.debug(f"Ignored non-mapped keys when loading {cls.__name__}: {sorted(list(ignored_keys))}")
+
+        try:
+            # Instantiate the class using the filtered data
+            return cls(**filtered_data)
+        except TypeError as e:
+            logger.error(f"Failed to instantiate {cls.__name__} from data: {e}", exc_info=True)
+            # Re-raise to signal that instantiation failed, which is a critical error.
+            raise
 
