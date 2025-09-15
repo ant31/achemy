@@ -75,14 +75,22 @@ class BaseRepository[T]:
             return [] if returning else None
 
         values = [o.dump_model(with_meta=False, fields=fields) for o in objs]
-        stmt = sa.insert(self._model_cls)
 
-        if on_conflict == "nothing":
-            # This works for dialects that support it (e.g., PostgreSQL, SQLite)
-            stmt = stmt.on_conflict_do_nothing(index_elements=on_conflict_index_elements)
-        elif on_conflict != "fail":
-            dialect = self.session.bind.dialect.name if self.session.bind else "unknown"
-            raise NotImplementedError(f"on_conflict='{on_conflict}' is not supported for dialect '{dialect}'.")
+        dialect_name = self.session.bind.dialect.name if self.session.bind else "unknown"
+
+        if dialect_name == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+            stmt = pg_insert(self._model_cls)
+            if on_conflict == "nothing":
+                stmt = stmt.on_conflict_do_nothing(index_elements=on_conflict_index_elements)
+            elif on_conflict != "fail":
+                raise NotImplementedError(f"on_conflict='{on_conflict}' is not supported for dialect '{dialect_name}'.")
+        else:
+            stmt = sa.insert(self._model_cls)
+            # For other dialects, only 'fail' is supported by default.
+            if on_conflict != "fail":
+                raise NotImplementedError(f"on_conflict='{on_conflict}' is not supported for dialect '{dialect_name}'.")
 
         insert_stmt = stmt.values(values)
         if returning:

@@ -167,7 +167,7 @@ class TestBaseRepository:
             # Test expire and expunge
             assert instance in session
             await repo.expire(instance)
-            assert instance in session.expired
+            assert instance in session.sync_session.expired
 
             await repo.expunge(instance)
             assert instance not in session
