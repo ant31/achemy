@@ -90,7 +90,7 @@ def generate_pydantic_code(model_cls: type[AlchemyModel]) -> tuple[str, set[str]
             default = field_info.default
             # Only include defaults for simple, repr-able types.
             if isinstance(default, (str, int, float, bool, type(None))):
-                default_val_repr = f" = {repr(default)}"
+                default_val_repr = f" = {default!r}"
 
         fields_str.append(f"    {name}: {type_repr}{default_val_repr}")
 
