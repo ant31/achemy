@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Sequence
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, Literal, TypeVar
 
 import sqlalchemy as sa
 import sqlalchemy.dialects.postgresql as sa_pg
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=AlchemyModel)
 
 
-class BaseRepository(Generic[T]):
+class BaseRepository[T]:
     """
     A generic repository class providing common data access patterns.
     """
@@ -238,7 +238,10 @@ class BaseRepository(Generic[T]):
         filters = [getattr(self._model_cls, key) == value for key, value in kwargs.items() if key in mapper_props]
 
         if not filters:
-            logger.warning("find_by() called with no valid filtering criteria. This will return the first record in the table.")
+            logger.warning(
+                "find_by() called with no valid filtering criteria. "
+                "This will return the first record in the table."
+            )
             return await self.first()
 
         query = self.select().where(*filters)

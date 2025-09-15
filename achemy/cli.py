@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -17,13 +18,15 @@ def generate_schemas(
         ...,
         help="The Python import path to the module containing your AlchemyModels (e.g., 'my_app.models').",
     ),
-    output_file: Path = typer.Option(
-        "schemas.py",
-        "--output",
-        "-o",
-        help="The path to the output file where schemas will be written.",
-        show_default=True,
-    ),
+    output_file: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="The path to the output file where schemas will be written.",
+            show_default=True,
+        ),
+    ] = Path("schemas.py"),
 ):
     """
     Generates static Pydantic schemas from SQLAlchemy models in a given module.
