@@ -3,7 +3,7 @@ import inspect
 import sys
 import types
 from pathlib import Path
-from typing import Any, ForwardRef, get_args, get_origin
+from typing import Any, ForwardRef, Union, get_args, get_origin
 
 from achemy.model import AlchemyModel
 
@@ -27,10 +27,10 @@ def _get_type_repr(t: Any) -> tuple[str, set[str]]:
     origin = get_origin(t)
     args = get_args(t)
 
-    # Handle Union types, especially Optionals (X | None)
-    if origin in (types.UnionType, type(type)):  # Catches `|` syntax and `Union`
+    # Handle Union types (e.g., int | str) and Optional types (e.g., str | None)
+    if origin is Union or origin is types.UnionType:
         # Filter out NoneType for cleaner representation if present
-        type_args = [arg for arg in args if arg is not type(None)]
+        type_args = [arg for arg in args if arg is not types.NoneType]
         arg_reprs = []
         for arg in type_args:
             arg_repr, arg_imports = _get_type_repr(arg)
@@ -38,7 +38,7 @@ def _get_type_repr(t: Any) -> tuple[str, set[str]]:
             imports.update(arg_imports)
 
         type_str = " | ".join(sorted(arg_reprs))  # Sort for consistent output
-        if type(None) in args:
+        if types.NoneType in args:
             type_str += " | None"
         return type_str, imports
 
