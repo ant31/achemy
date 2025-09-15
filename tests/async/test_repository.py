@@ -2,6 +2,7 @@
 Tests for achemy/repository.py
 """
 import pytest
+import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 from tests.models import MockCombinedModel
 
@@ -167,7 +168,8 @@ class TestBaseRepository:
             # Test expire and expunge
             assert instance in session
             await repo.expire(instance)
-            assert instance in session.sync_session.expired
+            # In SQLAlchemy 2.0, check expiration via inspect()
+            assert sa.inspect(instance).expired
 
             await repo.expunge(instance)
             assert instance not in session

@@ -7,6 +7,7 @@ from pydantic_core import to_jsonable_python
 from sqlalchemy import FromClause
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import ColumnProperty, Mapper
+from sqlalchemy.sql.expression import ClauseElement
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,10 @@ class AlchemyModel(AsyncAttrs):
                 try:
                     # Accessing the attribute might trigger loading if deferred
                     data[key] = getattr(self, key)
+                except AttributeError:
+                    # If attribute is not present (e.g., a server-defaulted column
+                    # on a new instance), skip it so the DB can apply the default.
+                    continue
                 except Exception as e:
                     logger.warning(f"Could not retrieve attribute '{key}' for {self}: {e}")
                     data[key] = None  # Or some other placeholder
@@ -149,13 +154,18 @@ class AlchemyModel(AsyncAttrs):
             A JSON-serializable dictionary.
         """
         plain_dict = self.to_dict(with_meta=with_meta, fields=fields)
+
+        # Filter out values that are SQLAlchemy constructs (like func.now())
+        # as they are not JSON-serializable and are meant for the DB.
+        serializable_dict = {k: v for k, v in plain_dict.items() if not isinstance(v, ClauseElement)}
+
         try:
             # Convert types like UUID, datetime to JSON-friendly formats
-            return to_jsonable_python(plain_dict)
+            return to_jsonable_python(serializable_dict)
         except Exception as e:
             logger.error(f"Error making dictionary for {self} JSON-serializable: {e}", exc_info=True)
             # Fallback: return the plain dict, might cause issues downstream
-            return plain_dict
+            return serializable_dict
 
     @classmethod
     def load(cls, data: dict[str, Any]) -> Self:
@@ -267,4 +277,3 @@ class AlchemyModel(AsyncAttrs):
         schema_name = f"{cls.__name__}Schema"
         # Create the Pydantic model dynamically
         return create_model(schema_name, **fields)
-
