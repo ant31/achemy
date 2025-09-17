@@ -2,7 +2,7 @@ import logging
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Integer, func
+from sqlalchemy import Integer, Uuid, func
 from sqlalchemy.orm import Mapped, MappedAsDataclass, declared_attr, mapped_column
 
 logger = logging.getLogger(__name__)
@@ -20,10 +20,10 @@ class UUIDPKMixin(MappedAsDataclass):
     @declared_attr
     def id(cls) -> Mapped[uuid.UUID]:
         return mapped_column(
+            Uuid,
             primary_key=True,
             default_factory=uuid.uuid4,
             kw_only=True,
-            init=False,
         )
 
 
