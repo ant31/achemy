@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from typing import Any, Literal, TypeVar
 
 import sqlalchemy as sa
-from sqlalchemy import FromClause, ScalarResult, Select, func
+from sqlalchemy import FromClause, Select, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_object_session
 from sqlalchemy.orm import Mapper
@@ -223,12 +223,8 @@ class BaseRepository[T]:
         q = query if query is not None else self.select()
         if limit is not None:
             q = q.limit(limit)
-        result = await self.session.execute(q)
-        return await result.scalars().all()
-
-    async def _execute_query(self, query: Select[tuple[T]]) -> ScalarResult[T]:
-        result = await self.session.execute(query)
-        return result.scalars()
+        result = await self.session.scalars(q)
+        return result.all()
 
     async def first(self, query: Select[tuple[T]] | None = None, order_by: Any = None) -> T | None:
         q = query if query is not None else self.select()
