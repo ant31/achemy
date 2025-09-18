@@ -243,8 +243,8 @@ class BaseRepository[T]:
         else:
             q = q.order_by(order_by)
         
-        results = await self.session.execute(q.limit(1))
-        return results.scalars().first()
+
+        return (await self.session.scalars(q.limit(1))).first()
 
     async def find_by(self, **kwargs: Any) -> T | None:
         """
