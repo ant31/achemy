@@ -69,7 +69,7 @@ class TestBaseRepository:
                 await repo.find_by(non_existent_key="some_value")
 
             # Test find_by with no arguments
-            with pytest.raises(ValueError, match="find_by() requires at least one keyword argument"):
+            with pytest.raises(ValueError, match=r"find_by\(\) requires at least one keyword argument"):
                 await repo.find_by()
 
     async def test_all_and_count(self, async_engine, model_class, unique_id):
@@ -309,9 +309,8 @@ class TestBaseRepository:
                 await repo.bulk_insert(data, on_conflict="unsupported")
 
             # Test NotImplementedError for 'update' on non-postgresql dialect
-            with patch.object(repo.session.bind.dialect, "name", "sqlite"):
-                with pytest.raises(NotImplementedError):
-                    await repo.bulk_insert(data, on_conflict="update")
+            with patch.object(repo.session.bind.dialect, "name", "sqlite"), pytest.raises(NotImplementedError):
+                await repo.bulk_insert(data, on_conflict="update")
 
     async def test_bulk_insert_type_error(self, async_engine):
         """Test bulk insert raises TypeError for class without __table__."""
