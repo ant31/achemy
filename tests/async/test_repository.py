@@ -461,6 +461,11 @@ class TestBaseRepository:
             assert "Error adding" in caplog.text
             await session.rollback()  # Important after integrity error
 
+            # Re-fetch the instance to ensure it's not in an expired state
+            # before subsequent tests.
+            instance = await repo.get(instance_id)
+            assert instance is not None
+
             # Mock session methods for errors that are hard to reproduce
             with patch.object(session, "get", side_effect=sa.exc.SQLAlchemyError("DB down")):
                 with pytest.raises(sa.exc.SQLAlchemyError):

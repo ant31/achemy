@@ -55,7 +55,7 @@ class BaseRepository[T]:
                 await self.session.commit()
                 await self.session.refresh(obj)
         except SQLAlchemyError as e:
-            logger.error(f"Error adding {obj}: {e}", exc_info=True)
+            logger.error(f"Error adding {obj!r}: {e}", exc_info=True)
             raise e
         return obj
 
@@ -149,7 +149,7 @@ class BaseRepository[T]:
                     try:
                         await self.session.refresh(obj)
                     except Exception as refresh_err:
-                        logger.warning(f"Failed to refresh object {obj} after commit: {refresh_err}")
+                        logger.warning(f"Failed to refresh object {obj!r} after commit: {refresh_err}")
             return objs
         except SQLAlchemyError as e:
             logger.error(f"Error during add_all for {self._model_cls.__name__}: {e}", exc_info=True)
