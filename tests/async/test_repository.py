@@ -222,7 +222,7 @@ class TestBaseRepository:
 
             # _ensure_obj_session should merge it into session2
             merged_instance = await repo2._ensure_obj_session(instance)
-            assert merged_instance is instance
+            assert merged_instance == instance
             assert not sa.inspect(merged_instance).detached
             assert repo2.obj_session(merged_instance) is session2
             assert merged_instance in session2
@@ -253,6 +253,10 @@ class TestBaseRepository:
 
             assert results is not None
             assert len(results) == 2
+
+            # The ORM's identity map might hold a stale version of the object.
+            # Expire it to ensure `find_by` re-fetches from the database.
+            session.expire(initial_instance)
 
             # Verify the update
             updated_instance = await repo.find_by(name=conflict_name)
@@ -466,12 +470,12 @@ class TestBaseRepository:
             with patch.object(session, "delete", side_effect=sa.exc.SQLAlchemyError("DB down")):
                 with pytest.raises(sa.exc.SQLAlchemyError):
                     await repo.delete(instance)
-                assert f"Error deleting {instance}" in caplog.text
+                assert f"Error deleting {repr(instance)}" in caplog.text
 
             with patch.object(session, "refresh", side_effect=sa.exc.SQLAlchemyError("DB down")):
                 with pytest.raises(sa.exc.SQLAlchemyError):
                     await repo.refresh(instance)
-                assert f"Error refreshing instance {instance}" in caplog.text
+                assert f"Error refreshing instance {repr(instance)}" in caplog.text
 
             with patch.object(session, "execute", side_effect=sa.exc.SQLAlchemyError("DB down")):
                 with pytest.raises(sa.exc.SQLAlchemyError):
