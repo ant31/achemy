@@ -502,11 +502,12 @@ class TestBaseRepository:
             await repo.add_all(items, commit=True)
 
             # The default order is by the primary key ('id' for MockCombinedModel).
-            # We can verify this by fetching all, sorting them, and comparing with `first()`.
+            # We can verify this by fetching all items in the table, sorting them by PK,
+            # and ensuring first() returns the one with the lowest PK.
             first_item = await repo.first()
             assert first_item is not None
 
-            all_items = await repo.all(query=repo.where(model_class.name.like(f"{base_name}%")))
-            lowest_pk_item = sorted(all_items, key=lambda x: x.id)[0]
+            all_items_in_table = await repo.all()
+            lowest_pk_item = sorted(all_items_in_table, key=lambda x: x.id)[0]
 
             assert first_item.id == lowest_pk_item.id
