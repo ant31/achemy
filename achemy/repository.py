@@ -224,7 +224,7 @@ class BaseRepository[T]:
         if limit is not None:
             q = q.limit(limit)
         result = await self.session.execute(q)
-        return result.scalars().all()
+        return await result.scalars().all()
 
     async def _execute_query(self, query: Select[tuple[T]]) -> ScalarResult[T]:
         result = await self.session.execute(query)
