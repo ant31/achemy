@@ -77,7 +77,13 @@ class BaseRepository[T]:
         if on_conflict == "update":
             if not on_conflict_index_elements:
                 raise ValueError("Argument 'on_conflict_index_elements' must be provided for 'update' policy.")
-            update_cols = {k: getattr(stmt.excluded, k) for k in values[0] if k not in on_conflict_index_elements}
+
+            pk_col_names = {c.name for c in self.__table__.primary_key.columns}
+            update_cols = {
+                k: getattr(stmt.excluded, k)
+                for k in values[0]
+                if k not in on_conflict_index_elements and k not in pk_col_names
+            }
             if not update_cols:
                 raise ValueError("No columns specified to update for 'on_conflict'='update'.")
             return stmt.on_conflict_do_update(index_elements=on_conflict_index_elements, set_=update_cols)

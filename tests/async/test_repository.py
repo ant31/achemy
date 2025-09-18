@@ -211,20 +211,20 @@ class TestBaseRepository:
         async with session_factory() as session1:
             repo1 = MockRepo(session1)
             await repo1.add(instance, commit=True)
-            assert await repo1.obj_session(instance) is session1
+            assert repo1.obj_session(instance) is session1
 
         # instance is now detached from session1
         assert sa.inspect(instance).detached
 
         async with session_factory() as session2:
             repo2 = MockRepo(session2)
-            assert await repo2.obj_session(instance) is None
+            assert repo2.obj_session(instance) is None
 
             # _ensure_obj_session should merge it into session2
             merged_instance = await repo2._ensure_obj_session(instance)
             assert merged_instance is instance
             assert not sa.inspect(merged_instance).detached
-            assert await repo2.obj_session(merged_instance) is session2
+            assert repo2.obj_session(merged_instance) is session2
             assert merged_instance in session2
 
     async def test_bulk_insert_update_on_conflict(self, async_engine, model_class, unique_id):
@@ -348,7 +348,7 @@ class TestBaseRepository:
             # Test deleting a transient instance (should do nothing and log a warning)
             transient_instance = model_class(name=f"transient_{unique_id}")
             await repo.delete(transient_instance)
-            assert f"Attempted to delete a transient instance {transient_instance!r}, ignoring." in caplog.text
+            assert f"Attempted to delete a transient instance {transient_instance}, ignoring." in caplog.text
 
             # Test delete with commit=False
             persistent_instance = await repo.add(model_class(name=f"no_commit_del_{unique_id}"), commit=True)
@@ -466,12 +466,12 @@ class TestBaseRepository:
             with patch.object(session, "delete", side_effect=sa.exc.SQLAlchemyError("DB down")):
                 with pytest.raises(sa.exc.SQLAlchemyError):
                     await repo.delete(instance)
-                assert f"Error deleting {instance!r}" in caplog.text
+                assert f"Error deleting {instance}" in caplog.text
 
             with patch.object(session, "refresh", side_effect=sa.exc.SQLAlchemyError("DB down")):
                 with pytest.raises(sa.exc.SQLAlchemyError):
                     await repo.refresh(instance)
-                assert f"Error refreshing instance {instance!r}" in caplog.text
+                assert f"Error refreshing instance {instance}" in caplog.text
 
             with patch.object(session, "execute", side_effect=sa.exc.SQLAlchemyError("DB down")):
                 with pytest.raises(sa.exc.SQLAlchemyError):
