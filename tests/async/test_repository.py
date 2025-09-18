@@ -486,3 +486,27 @@ class TestBaseRepository:
                 with pytest.raises(sa.exc.SQLAlchemyError):
                     await repo.count()
                 assert f"Error executing count query for {model_class.__name__}" in caplog.text
+
+    async def test_first_with_no_args_and_default_order(self, async_engine, model_class, unique_id):
+        """Test first() with no arguments to confirm it uses default PK ordering."""
+        _db_engine, session_factory = async_engine.session()
+        base_name = f"first_no_args_{unique_id}"
+        async with session_factory() as session:
+            repo = MockRepo(session)
+            # Add items out of order by name
+            items = [
+                model_class(name=f"{base_name}_C"),
+                model_class(name=f"{base_name}_A"),
+                model_class(name=f"{base_name}_B"),
+            ]
+            await repo.add_all(items, commit=True)
+
+            # The default order is by the primary key ('id' for MockCombinedModel).
+            # We can verify this by fetching all, sorting them, and comparing with `first()`.
+            first_item = await repo.first()
+            assert first_item is not None
+
+            all_items = await repo.all(query=repo.where(model_class.name.like(f"{base_name}%")))
+            lowest_pk_item = sorted(all_items, key=lambda x: x.id)[0]
+
+            assert first_item.id == lowest_pk_item.id
