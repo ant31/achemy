@@ -219,16 +219,16 @@ class BaseRepository[T]:
             query = query.where(*args)
         return query
 
-    async def _execute_query(self, query: Select[tuple[T]]) -> ScalarResult[T]:
-        result = await self.session.execute(query)
-        return result.scalars()
-
     async def all(self, query: Select[tuple[T]] | None = None, limit: int | None = None) -> Sequence[T]:
         q = query if query is not None else self.select()
         if limit is not None:
             q = q.limit(limit)
         result = await self._execute_query(q)
         return result.all()
+
+    async def _execute_query(self, query: Select[tuple[T]]) -> ScalarResult[T]:
+        result = await self.session.execute(query)
+        return result.scalars()
 
     async def first(self, query: Select[tuple[T]] | None = None, order_by: Any = None) -> T | None:
         q = query if query is not None else self.select()
@@ -240,9 +240,9 @@ class BaseRepository[T]:
                 pass
         else:
             q = q.order_by(order_by)
-        q = q.limit(1)
-        result = await self._execute_query(q)
-        return result.first()
+        
+        results = await self.all(query=q, limit=1)
+        return results[0] if results else None
 
     async def find_by(self, **kwargs: Any) -> T | None:
         """
