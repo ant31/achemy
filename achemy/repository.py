@@ -172,7 +172,7 @@ class BaseRepository[T]:
                 # Flush to send the DELETE to the DB without ending the transaction.
                 await self.session.flush()
         except SQLAlchemyError as e:
-            logger.error(f"Error deleting {repr(obj)}: {e}", exc_info=True)
+            logger.error(f"Error deleting {obj!r}: {e}", exc_info=True)
             raise e
 
     # --- Instance State Management ---
@@ -181,7 +181,7 @@ class BaseRepository[T]:
         try:
             await self.session.refresh(obj_in_session, attribute_names=attribute_names)
         except SQLAlchemyError as e:
-            logger.error(f"Error refreshing instance {repr(obj_in_session)}: {e}", exc_info=True)
+            logger.error(f"Error refreshing instance {obj_in_session!r}: {e}", exc_info=True)
             raise e
         return obj_in_session
 

@@ -470,12 +470,12 @@ class TestBaseRepository:
             with patch.object(session, "delete", side_effect=sa.exc.SQLAlchemyError("DB down")):
                 with pytest.raises(sa.exc.SQLAlchemyError):
                     await repo.delete(instance)
-                assert f"Error deleting {repr(instance)}" in caplog.text
+                assert f"Error deleting {instance!r}" in caplog.text
 
             with patch.object(session, "refresh", side_effect=sa.exc.SQLAlchemyError("DB down")):
                 with pytest.raises(sa.exc.SQLAlchemyError):
                     await repo.refresh(instance)
-                assert f"Error refreshing instance {repr(instance)}" in caplog.text
+                assert f"Error refreshing instance {instance!r}" in caplog.text
 
             with patch.object(session, "execute", side_effect=sa.exc.SQLAlchemyError("DB down")):
                 with pytest.raises(sa.exc.SQLAlchemyError):
