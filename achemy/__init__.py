@@ -5,7 +5,7 @@ from achemy.mixins import IntPKMixin, PGUUIDPKMixin, UpdateMixin, UUIDPKMixin
 from achemy.model import AlchemyModel
 from achemy.repository import BaseRepository
 
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 
 __all__ = [
     "AchemyEngine",
